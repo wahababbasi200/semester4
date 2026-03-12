@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.git/
+.env
+mlruns/
+*.csv
+*.pkl
+*.h5
+*.pt
+notebooks/
+data/
+models/

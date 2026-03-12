@@ -1,0 +1,170 @@
+services:
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ml_jupyter
+    ports:
+      - "8889:8888"   # JupyterLab
+    volumes:
+      - ./notebooks:/workspace/notebooks
+      - ./data:/workspace/data             # datasets
+      - ./models:/workspace/models         # saved models
+      - ./mlruns:/mlflow/mlruns            # shared artifact store
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    depends_on:
+      - mlflow
+    restart: unless-stopped
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.15.1
+    container_name: ml_mlflow
+    ports:
+      - "5000:5000"   # MLflow UI
+    volumes:
+      - ./mlruns:/mlflow/mlruns
+    command: >
+      mlflow server
+      --backend-store-uri /mlflow/mlruns
+      --artifacts-destination /mlflow/mlruns
+      --serve-artifacts
+      --host 0.0.0.0
+      --port 5000
+    restart: unless-stopped
+
+  ml-app:
+    build: .
+    container_name: ml_app_container
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./notebooks:/workspace/notebooks
+      - ./data:/workspace/data
+      - ./models:/workspace/models
+      - ./mlruns:/mlflow/mlruns            # shared artifact store
+    depends_on:
+      - redis
+      - mlflow
+    environment:
+      - REDIS_HOST=redis
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    command: python /workspace/notebooks/app.py
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    container_name: redis_container
+    ports:
+      - "6379:6379"
+
+  airflow-postgres:
+    image: postgres:15
+    container_name: airflow_postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  airflow-init:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: airflow_init
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+    environment:
+      - AIRFLOW_UID=${AIRFLOW_UID}
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@airflow-postgres/${POSTGRES_DB}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW__WEBSERVER__SECRET_KEY}
+      - AIRFLOW__CORE__DAG_FILE_PROCESSOR_TIMEOUT=120
+      - GIT_PYTHON_REFRESH=quiet
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+    entrypoint: /bin/bash
+    command: >
+      -c "airflow db migrate &&
+      (airflow users create --username ${AIRFLOW_ADMIN_USERNAME} --firstname Admin --lastname User --role Admin --email admin@example.com --password ${AIRFLOW_ADMIN_PASSWORD} || true)"
+
+  airflow-webserver:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: airflow_webserver
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      - AIRFLOW_UID=${AIRFLOW_UID}
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@airflow-postgres/${POSTGRES_DB}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW__WEBSERVER__SECRET_KEY}
+      - AIRFLOW__CORE__DAG_FILE_PROCESSOR_TIMEOUT=120
+      - GIT_PYTHON_REFRESH=quiet
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+    command: webserver
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  airflow-scheduler:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    container_name: airflow_scheduler
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      - AIRFLOW_UID=${AIRFLOW_UID}
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@airflow-postgres/${POSTGRES_DB}
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW__WEBSERVER__SECRET_KEY}
+      - AIRFLOW__CORE__DAG_FILE_PROCESSOR_TIMEOUT=120
+      - GIT_PYTHON_REFRESH=quiet
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+    command: scheduler
+    restart: unless-stopped
+
+volumes:
+  airflow_postgres_data:
