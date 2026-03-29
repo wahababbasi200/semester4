@@ -1,0 +1,122 @@
+# Experiment Configuration
+# All hyperparameters and settings for the MLOps fraud detection project
+
+project:
+  name: "fraud-detection-mlops"
+  description: "Embedding Complexity vs. Operational Cost in Fraud Detection Pipelines"
+  dataset: "PaySim"
+
+data:
+  raw_path: "data/raw/PS_20174392719_1491204439457_log.csv"
+  eda_path: "data/processed/eda/"
+  preprocessing_path: "data/processed/preprocessing/"
+  configs_path: "data/configs/"
+  fraud_transaction_types: ["TRANSFER", "CASH_OUT"]
+  random_seeds: [42, 123, 456]
+
+  split:
+    train_ratio: 0.70
+    val_ratio: 0.15
+    test_ratio: 0.15
+    method: "temporal"  # split by account's last transaction step
+
+segmentation:
+  features: ["total_volume", "txn_count", "active_duration"]
+  n_segments: 3
+  segment_names: ["SEG_MICRO", "SEG_REGULAR", "SEG_HEAVY"]
+  quantile_boundaries: [0.33, 0.75]
+
+tokenization:
+  max_transactions: 30  # recency truncation
+  amount_quantiles: [0.20, 0.50, 0.80, 0.95]
+  frequency_lookback_steps: 24
+  frequency_quantiles: [0.25, 0.75]
+
+  vocabulary:
+    special: ["[ACCT]", "[TXN]", "[PAD]", "[MASK]", "[CLS]", "[SEP]"]
+    segment: ["SEG_MICRO", "SEG_REGULAR", "SEG_HEAVY"]
+    role: ["SENDER", "RECEIVER"]
+    type: ["TRANSFER", "CASH_OUT"]
+    amount: ["AMT_VERY_LOW", "AMT_LOW", "AMT_MEDIUM", "AMT_HIGH", "AMT_VERY_HIGH"]
+    time: ["TIME_LATE_NIGHT", "TIME_MORNING", "TIME_AFTERNOON", "TIME_EVENING"]
+    day: ["DAY_WEEKDAY", "DAY_WEEKEND"]
+    frequency: ["FREQ_LOW", "FREQ_MEDIUM", "FREQ_HIGH"]
+    balance: ["BAL_EXACT_DEBIT", "BAL_OVER_DEBIT", "BAL_UNDER_DEBIT", "BAL_NO_CHANGE",
+              "BAL_UNKNOWN", "BAL_EXACT_CREDIT", "BAL_MISMATCH_CREDIT"]
+
+models:
+  downstream_mlp:
+    hidden_dims: [256, 128]
+    dropout: 0.3
+    activation: "relu"
+
+  training:
+    batch_size: 32
+    max_epochs_mlp: 50
+    max_epochs_distilbert: 10
+    early_stopping_patience: 5
+    early_stopping_metric: "pr_auc"
+    optimizer: "adam"
+    lr_mlp: 1.0e-3
+    lr_distilbert: 2.0e-5
+    subsample_nonfraud_ratio: 15  # keep all fraud + this many × fraud of non-fraud; null to use full data
+
+  tfidf:
+    max_features: 5000
+    ngram_range: [1, 3]
+
+  word2vec:
+    vector_size: 128
+    window: 5
+    min_count: 1
+    epochs: 20
+    sg: 1  # skip-gram
+
+  fasttext:
+    vector_size: 128
+    window: 5
+    min_count: 1
+    epochs: 20
+
+  doc2vec:
+    vector_size: 128
+    window: 5
+    min_count: 1
+    epochs: 20
+
+  distilbert:
+    model_name: "distilbert-base-uncased"
+    max_length: 128
+    cls_projection_dim: 128
+    mlm_epochs: 5
+    mlm_lr: 5.0e-5
+    mlm_batch_size: 32
+    mlm_probability: 0.15
+
+mlflow:
+  experiment_name: "fraud-detection-embeddings"
+  tracking_uri: "http://localhost:5002"
+  artifact_root: "s3://your-fraud-detection-bucket/mlflow-artifacts"
+
+serving:
+  host: "0.0.0.0"
+  port: 8000
+  model_path: "/app/model"
+  configs_path: "/app/configs"
+  log_path: "/app/logs/fraud_api.log"
+  log_max_bytes: 52428800  # 50MB
+  log_backup_count: 5
+
+monitoring:
+  drift_warning_threshold: 0.01    # 1% fraud prediction rate
+  drift_critical_threshold: 0.05   # 5% fraud prediction rate
+  drift_zero_alert_window: 1000    # alert if 0% fraud over 1000 predictions
+
+promotion:
+  latency_sla_p99_ms: 100
+  min_pr_auc_improvement: 0.0  # must be >= current production model
+
+benchmarking:
+  warmup_requests: 100
+  benchmark_requests: 1000
+  benchmark_repeats: 3
