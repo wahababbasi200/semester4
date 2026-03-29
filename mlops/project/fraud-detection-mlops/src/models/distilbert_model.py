@@ -395,6 +395,8 @@ def pretrain_mlm(
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
     save_path = Path(save_path)
     save_path.mkdir(parents=True, exist_ok=True)
