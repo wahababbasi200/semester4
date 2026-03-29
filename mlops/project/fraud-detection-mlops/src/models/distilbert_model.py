@@ -425,7 +425,10 @@ def pretrain_mlm(
                 max_length=self.max_length,
                 return_tensors="pt",
             )
-            return {"input_ids": enc["input_ids"].squeeze(0)}
+            return {
+                "input_ids": enc["input_ids"].squeeze(0),
+                "attention_mask": enc["attention_mask"].squeeze(0),
+            }
 
     dataset = _MLMDataset(train_token_strings, tokenizer, max_length)
     loader = DataLoader(
@@ -464,9 +467,10 @@ def pretrain_mlm(
         total_loss = 0.0
         for batch in loader:
             input_ids = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"].to(device)
             optimizer.zero_grad()
-            outputs = model(input_ids=input_ids, labels=labels)
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
             outputs.loss.backward()
             optimizer.step()
             total_loss += outputs.loss.item()
