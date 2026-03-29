@@ -1,0 +1,59 @@
+# Data (large files)
+data/raw/
+data/processed/
+*.csv
+*.parquet
+
+# Model artifacts (baked into Docker, not committed)
+model_artifacts/model/
+model_artifacts/configs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+
+# Secrets
+.env
+.env.*
+secrets.yaml
+aws_credentials
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# MLflow local runs (use S3 backend)
+mlruns/
+mlartifacts/
+
+# Logs (mounted volume, not committed)
+logs/*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.tar
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/

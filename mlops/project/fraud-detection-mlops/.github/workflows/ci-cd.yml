@@ -1,0 +1,82 @@
+name: ML Pipeline CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: pytest tests/ -v --cov=src --cov-report=term-missing
+
+      - name: Lint code
+        run: flake8 src/ --max-line-length=120 --exclude=src/serving/app.py
+
+  smoke-test:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build Docker image
+        run: docker build -t fraud-api:test .
+
+      - name: Start container
+        run: docker run -d -p 8000:8000 --name smoke-test fraud-api:test
+
+      - name: Wait for startup
+        run: sleep 15
+
+      - name: Health check
+        run: curl -f http://localhost:8000/health
+
+      - name: Golden test set validation
+        run: |
+          python tests/run_golden_tests.py \
+            --url http://localhost:8000/predict \
+            --golden tests/golden_test_set.json \
+            --min-f1 0.5
+
+      - name: Stop container
+        if: always()
+        run: docker stop smoke-test || true
+
+  build-and-push:
+    needs: smoke-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        run: |
+          aws ecr get-login-password | \
+          docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+
+      - name: Build and push to ECR
+        run: |
+          docker build -t ${{ secrets.ECR_REGISTRY }}/fraud-api:${{ github.sha }} .
+          docker push ${{ secrets.ECR_REGISTRY }}/fraud-api:${{ github.sha }}
+          docker tag ${{ secrets.ECR_REGISTRY }}/fraud-api:${{ github.sha }} \
+                     ${{ secrets.ECR_REGISTRY }}/fraud-api:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/fraud-api:latest

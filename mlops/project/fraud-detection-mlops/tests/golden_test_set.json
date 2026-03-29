@@ -1,0 +1,5 @@
+{
+  "_comment": "50 fraud + 50 non-fraud samples for CI/CD smoke tests. Populated after Phase 4 training.",
+  "version": "1.0",
+  "samples": []
+}

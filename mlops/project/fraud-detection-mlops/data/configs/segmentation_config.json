@@ -1,0 +1,29 @@
+{
+  "score_thresholds": [
+    0.07684102212648437,
+    0.5892875244395859
+  ],
+  "feature_stats": {
+    "total_volume": {
+      "min": 1.74,
+      "max": 273927022.99
+    },
+    "txn_count": {
+      "min": 1.0,
+      "max": 75.0
+    },
+    "active_duration": {
+      "min": 0.0,
+      "max": 402.0
+    }
+  },
+  "segment_names": [
+    "SEG_MICRO",
+    "SEG_REGULAR",
+    "SEG_HEAVY"
+  ],
+  "quantile_boundaries": [
+    0.33,
+    0.75
+  ]
+}

@@ -1,0 +1,47 @@
+name: fraud-detection-prod
+
+services:
+  fraud-api:
+    image: ${ECR_REGISTRY}/fraud-api:latest
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  mlflow:
+    image: ${ECR_REGISTRY}/mlflow:latest
+    ports:
+      - "5002:5000"
+    restart: unless-stopped
+    environment:
+      - MLFLOW_ARTIFACT_ROOT=s3://your-fraud-detection-bucket/mlflow-artifacts
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    volumes:
+      - mlflow_data:/mlflow
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+volumes:
+  mlflow_data:
+  grafana_data:

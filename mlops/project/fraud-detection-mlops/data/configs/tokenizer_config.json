@@ -1,0 +1,62 @@
+{
+  "thresholds": {
+    "amount_thresholds": [
+      64767.5,
+      167452.28,
+      345300.24,
+      910786.5225
+    ],
+    "amount_quantiles": [
+      0.2,
+      0.5,
+      0.8,
+      0.95
+    ],
+    "freq_thresholds": [
+      0.0,
+      1.0
+    ],
+    "frequency_quantiles": [
+      0.25,
+      0.75
+    ],
+    "freq_lookback_steps": 24
+  },
+  "vocabulary": [
+    "[CLS]",
+    "[SEP]",
+    "[PAD]",
+    "[MASK]",
+    "[ACCT]",
+    "[TXN]",
+    "SEG_MICRO",
+    "SEG_REGULAR",
+    "SEG_HEAVY",
+    "SENDER",
+    "RECEIVER",
+    "TRANSFER",
+    "CASH_OUT",
+    "AMT_VERY_LOW",
+    "AMT_LOW",
+    "AMT_MEDIUM",
+    "AMT_HIGH",
+    "AMT_VERY_HIGH",
+    "TIME_LATE_NIGHT",
+    "TIME_MORNING",
+    "TIME_AFTERNOON",
+    "TIME_EVENING",
+    "DAY_WEEKDAY",
+    "DAY_WEEKEND",
+    "FREQ_LOW",
+    "FREQ_MEDIUM",
+    "FREQ_HIGH",
+    "BAL_EXACT_DEBIT",
+    "BAL_OVER_DEBIT",
+    "BAL_UNDER_DEBIT",
+    "BAL_NO_CHANGE",
+    "BAL_UNKNOWN",
+    "BAL_EXACT_CREDIT",
+    "BAL_MISMATCH_CREDIT"
+  ],
+  "vocab_size": 34
+}

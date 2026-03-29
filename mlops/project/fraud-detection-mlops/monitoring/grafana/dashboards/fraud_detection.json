@@ -1,0 +1,6 @@
+{
+  "__comment": "Grafana dashboard JSON — populated in Phase 5",
+  "title": "Fraud Detection MLOps Dashboard",
+  "uid": "fraud-detection-v1",
+  "panels": []
+}

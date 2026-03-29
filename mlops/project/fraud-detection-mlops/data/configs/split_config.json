@@ -1,0 +1,23 @@
+{
+  "split_boundaries": {
+    "train_last_step_max": 404,
+    "val_last_step_max": 552,
+    "test_last_step_max": 743
+  },
+  "account_counts": {
+    "train": 356695,
+    "val": 76434,
+    "test": 76436,
+    "total": 509565
+  },
+  "fraud_receiver_counts": {
+    "train": 3384,
+    "val": 2022,
+    "test": 2763
+  },
+  "fraud_receiver_rates": {
+    "train": 0.009487096819411543,
+    "val": 0.026454195776748568,
+    "test": 0.03614788842953582
+  }
+}
