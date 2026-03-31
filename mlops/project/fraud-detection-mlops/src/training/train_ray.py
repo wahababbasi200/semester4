@@ -45,12 +45,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 ALL_VARIANTS = [
-    "tfidf",
-    "word2vec",
-    "fasttext",
-    "doc2vec",
-    "distilbert_frozen",
-    "distilbert_ft",
+    # ── Already completed ────────────────────────────────────────────────
+    # "tfidf",
+    # "word2vec",
+    # "fasttext",
+    # "doc2vec",
+    # "distilbert_frozen",
+
+    # ── Fine-tune only (uncomment for future use) ────────────────────────
+    # "distilbert_ft",
+
+    # ── MLM pretrain + fine-tune (active) ────────────────────────────────
     "distilbert_mlm_ft",
 ]
 ALL_SEEDS = [42, 123, 456]
