@@ -15,8 +15,8 @@
 
 name: fraud-detection-training
 
-# Anyscale-hosted cloud (from console)
-cloud: cld_pdl7cpb5dxnluuespnf1rj1h3g
+# Anyscale-hosted cloud (from console — use name, not ID)
+cloud: "Anyscale Cloud"
 
 # Entry point: run the Ray-distributed training script
 entrypoint: python -m src.training.train_ray --variants distilbert_mlm_ft --seeds 42 123 456
