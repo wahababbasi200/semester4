@@ -33,6 +33,7 @@ excludes:
   - __pycache__/
   - "*.pyc"
   - venv/
+  - venv_wsl/
 
 # Pip dependencies to install on the cluster
 requirements:
