@@ -1,6 +1,13 @@
-# Ray Cluster Configuration for AWS
-# ----------------------------------
-# Launches a GPU cluster on AWS to train all 18 experiments in parallel.
+# Ray Cluster Configuration for AWS (DEPRECATED — use Anyscale instead)
+# ---------------------------------------------------------------------
+# This file launches a self-managed Ray GPU cluster on AWS.
+# AWS free tier does NOT support g4dn GPU instances, so this will fail
+# unless you have a paid AWS account with GPU quota.
+#
+# RECOMMENDED: Use Anyscale hosted cloud instead:
+#   anyscale job submit -f anyscale-job.yaml
+#
+# See anyscale-job.yaml for the Anyscale-hosted alternative.
 #
 # Cost estimate (g4dn.xlarge spot):
 #   - ~$0.16/hr per instance (spot price)

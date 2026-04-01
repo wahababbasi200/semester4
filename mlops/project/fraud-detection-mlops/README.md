@@ -10,6 +10,9 @@
 ```
 Local (Docker Compose) → GitHub Actions CI/CD → AWS ECR → AWS EC2 (Production)
      Training + MLflow         Build, Test, Push       Docker images    Docker Compose Stack
+
+Distributed Training: Anyscale Hosted Cloud (Ray GPU cluster)
+     anyscale job submit -f anyscale-job.yaml
 ```
 
 ## Six Embedding Variants Compared
@@ -45,7 +48,11 @@ jupyter notebook notebooks/01_eda.ipynb
 jupyter notebook notebooks/02_preprocessing.ipynb
 
 # 5. Train all 6 variants (Phase 4)
+# Local (sequential):
 python src/training/train.py --config configs/experiment_config.yaml
+# Distributed (Anyscale hosted cloud):
+pip install anyscale && anyscale login
+anyscale job submit -f anyscale-job.yaml
 
 # 6. Start local stack (Phase 5)
 docker-compose up -d
@@ -85,4 +92,4 @@ fraud-detection-mlops/
 
 ## Stack
 
-Python 3.10 · PyTorch · HuggingFace Transformers · gensim · scikit-learn · FastAPI · MLflow · Prometheus · Grafana · Docker · GitHub Actions · AWS (EC2, ECR, S3)
+Python 3.10 · PyTorch · HuggingFace Transformers · gensim · scikit-learn · FastAPI · MLflow · Prometheus · Grafana · Docker · GitHub Actions · Ray · Anyscale · AWS (ECR)

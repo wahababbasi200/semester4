@@ -11,6 +11,10 @@ Usage:
     python -m src.training.train_ray
     python -m src.training.train_ray --max-concurrent 2
 
+    # ── Anyscale hosted cloud (recommended) ──────────────────────────────
+    anyscale job submit -f anyscale-job.yaml               # submit as managed job
+    anyscale job logs <job-id>                              # view logs
+
     # ── AWS GPU cluster (using ray-cluster.yaml) ─────────────────────────
     ray up ray-cluster.yaml                                  # launch cluster
     ray submit ray-cluster.yaml src/training/train_ray.py    # run training
@@ -202,9 +206,14 @@ def main(
     seeds = seeds or ALL_SEEDS
 
     # ── Initialise Ray ───────────────────────────────────────────────────────
+    # Anyscale jobs auto-set RAY_ADDRESS; detect and use it
     if ray_address:
         logger.info("Connecting to Ray cluster at %s", ray_address)
         ray.init(address=ray_address)
+    elif os.environ.get("RAY_ADDRESS"):
+        logger.info("Detected Anyscale/Ray environment (RAY_ADDRESS=%s)",
+                     os.environ["RAY_ADDRESS"])
+        ray.init(address="auto")
     else:
         logger.info("Starting local Ray cluster (CPU-only)")
         ray.init()
