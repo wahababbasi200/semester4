@@ -32,7 +32,8 @@ echo "==> Creating staging directory with only required files..."
 # Copy source code and configs (small files)
 cp -r src/ "$STAGING_DIR/src/"
 cp -r configs/ "$STAGING_DIR/configs/"
-cp -r data/configs/ "$STAGING_DIR/data/configs/"
+mkdir -p "$STAGING_DIR/data/configs/"
+cp -r data/configs/* "$STAGING_DIR/data/configs/"
 cp anyscale-job.yaml "$STAGING_DIR/"
 cp requirements.txt "$STAGING_DIR/" 2>/dev/null || true
 
