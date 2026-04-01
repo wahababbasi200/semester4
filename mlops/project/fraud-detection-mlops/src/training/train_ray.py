@@ -265,7 +265,11 @@ def main(
 
         if variant in HEAVY_VARIANTS:
             num_cpus = cpus_heavy
-            num_gpus = 1 if total_gpus > 0 else 0
+            # Always request 1 GPU for heavy variants on cloud clusters.
+            # On Anyscale, GPU workers auto-scale when tasks request GPUs.
+            # Only fall back to 0 GPUs on local (non-cloud) runs.
+            is_cloud = bool(ray_address or os.environ.get("RAY_ADDRESS"))
+            num_gpus = 1 if (total_gpus > 0 or is_cloud) else 0
         else:
             num_cpus = cpus_statistical
             num_gpus = 0
