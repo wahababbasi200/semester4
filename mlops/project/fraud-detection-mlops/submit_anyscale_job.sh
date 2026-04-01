@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # submit_anyscale_job.sh
 # ----------------------
-# Submits the Anyscale training job, temporarily overriding .gitignore
-# so that processed parquet data files get uploaded to the cluster.
+# Submits the Anyscale training job with only the required data files.
+# Creates a lightweight staging directory to avoid uploading unnecessary
+# large files (paysim_filtered.parquet = 114MB, etc.).
 #
 # Usage:
 #   bash submit_anyscale_job.sh
@@ -13,29 +14,40 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-GITIGNORE=".gitignore"
-GITIGNORE_BAK=".gitignore.bak"
+DATA_DIR="data/processed/preprocessing"
 
 # Check that data files exist locally
-if [ ! -f "data/processed/preprocessing/train_tokenized.parquet" ]; then
-    echo "ERROR: Training data not found at data/processed/preprocessing/"
+if [ ! -f "$DATA_DIR/train_tokenized.parquet" ]; then
+    echo "ERROR: Training data not found at $DATA_DIR/"
     echo "Run notebooks/02_preprocessing.ipynb first to generate parquet files."
     exit 1
 fi
 
-echo "==> Temporarily modifying .gitignore to include data files..."
-cp "$GITIGNORE" "$GITIGNORE_BAK"
+# Create a lightweight staging directory with only needed files
+STAGING_DIR=$(mktemp -d)
+trap "rm -rf $STAGING_DIR" EXIT
 
-# Remove lines that block parquet/processed data upload
-sed -i '/^data\/processed\/$/d' "$GITIGNORE"
-sed -i '/^\*\.parquet$/d' "$GITIGNORE"
+echo "==> Creating staging directory with only required files..."
 
-echo "==> Submitting Anyscale job..."
+# Copy source code and configs (small files)
+cp -r src/ "$STAGING_DIR/src/"
+cp -r configs/ "$STAGING_DIR/configs/"
+cp -r data/configs/ "$STAGING_DIR/data/configs/"
+cp anyscale-job.yaml "$STAGING_DIR/"
+cp requirements.txt "$STAGING_DIR/" 2>/dev/null || true
+
+# Copy ONLY the 3 tokenized parquets needed for training (~40MB total)
+mkdir -p "$STAGING_DIR/$DATA_DIR"
+cp "$DATA_DIR/train_tokenized.parquet" "$STAGING_DIR/$DATA_DIR/"
+cp "$DATA_DIR/val_tokenized.parquet" "$STAGING_DIR/$DATA_DIR/"
+cp "$DATA_DIR/test_tokenized.parquet" "$STAGING_DIR/$DATA_DIR/"
+
+echo "    Staging size: $(du -sh "$STAGING_DIR" | cut -f1)"
+
+echo "==> Submitting Anyscale job from staging directory..."
+cd "$STAGING_DIR"
 anyscale job submit -f anyscale-job.yaml "$@"
 SUBMIT_EXIT=$?
-
-echo "==> Restoring .gitignore..."
-mv "$GITIGNORE_BAK" "$GITIGNORE"
 
 if [ $SUBMIT_EXIT -eq 0 ]; then
     echo "==> Job submitted successfully!"
