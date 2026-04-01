@@ -18,6 +18,9 @@ name: fraud-detection-training
 # Anyscale-hosted cloud (from console — use name, not ID)
 cloud: "Anyscale Cloud"
 
+# Compute config created in Anyscale console
+compute_config: "training-gpu:1"
+
 # Entry point: run the Ray-distributed training script
 entrypoint: python -m src.training.train_ray --variants distilbert_mlm_ft --seeds 42 123 456
 
