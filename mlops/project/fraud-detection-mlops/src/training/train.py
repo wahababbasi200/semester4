@@ -73,6 +73,8 @@ ALL_VARIANTS = [
     "distilbert_frozen",
     "distilbert_ft",
     "distilbert_mlm_ft",
+    "bert_ft",
+    "bert_mlm_ft",
 ]
 ALL_SEEDS = [42, 123, 456]
 
@@ -368,6 +370,7 @@ def _run_distilbert_e2e(
         seed=seed,
         device=device,
         checkpoint_path=adir / "ft_ckpt",
+        config_key=config_key,
     )
     model.save(adir / "classifier")
 
@@ -377,7 +380,7 @@ def _run_distilbert_e2e(
 
     max_length = dc.get("max_length", 512)
     pad_id = tokenizer.pad_token_id or 0
-    batch_size = CFG.get("training", {}).get("batch_size", 64)
+    batch_size = CFG.get("models", {}).get("training", {}).get("batch_size", 128)
 
     def _make_loader(texts, labels):
         ds = TokenizedDataset(texts, labels, tokenizer, max_length)

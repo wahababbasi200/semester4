@@ -515,13 +515,19 @@ def train_distilbert(
     seed: int,
     device: Optional[torch.device] = None,
     checkpoint_path: Optional["str | Path"] = None,
+    config_key: str = "distilbert",
 ) -> Tuple["DistilBERTClassifier", Dict]:
     """
-    End-to-end fine-tuning for distilbert_ft and distilbert_mlm_ft variants.
+    End-to-end fine-tuning for distilbert_ft, distilbert_mlm_ft,
+    bert_ft, and bert_mlm_ft variants.
 
     Uses dual learning rates:
-      - DistilBERT backbone: lr_distilbert (2e-5)
+      - Backbone: lr_distilbert (2e-5)
       - Projection + MLP head: lr_mlp (1e-3)
+
+    Parameters
+    ----------
+    config_key : "distilbert" or "bert" — selects the model config section.
 
     Returns
     -------
@@ -539,7 +545,7 @@ def train_distilbert(
 
     models_c = cfg.get("models", {})
     tc = models_c.get("training", {})
-    dc = models_c.get("distilbert", {})
+    dc = models_c.get(config_key, {})
     mlp_c = models_c.get("downstream_mlp", {})
 
     batch_size = tc.get("batch_size", 64)
