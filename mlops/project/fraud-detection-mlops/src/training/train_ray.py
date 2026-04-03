@@ -3,28 +3,14 @@ train_ray.py
 ------------
 Ray-accelerated training orchestration.
 
-Parallelises the 18 independent (variant x seed) experiments using Ray tasks,
-distributing them across all available CPU/GPU workers.
-
 Usage:
-    # ── Local (CPU-only laptop) ──────────────────────────────────────────
+    # ── Local (CPU-only) ──────────────────────────────────────────
     python -m src.training.train_ray
     python -m src.training.train_ray --max-concurrent 2
 
     # ── Anyscale hosted cloud (recommended) ──────────────────────────────
     anyscale job submit -f anyscale-job.yaml               # submit as managed job
     anyscale job logs <job-id>                              # view logs
-
-    # ── AWS GPU cluster (using ray-cluster.yaml) ─────────────────────────
-    ray up ray-cluster.yaml                                  # launch cluster
-    ray submit ray-cluster.yaml src/training/train_ray.py    # run training
-    ray down ray-cluster.yaml                                # tear down
-
-    # ── Connect to any running Ray cluster ───────────────────────────────
-    python -m src.training.train_ray --ray-address ray://<ip>:10001
-
-    # ── Subset of variants/seeds ─────────────────────────────────────────
-    python -m src.training.train_ray --variants distilbert_ft --seeds 42 123
 """
 
 import argparse
@@ -49,25 +35,30 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 ALL_VARIANTS = [
-    # ── Already completed ────────────────────────────────────────────────
     # "tfidf",
     # "word2vec",
     # "fasttext",
     # "doc2vec",
     # "distilbert_frozen",
 
-    # ── Fine-tune only (uncomment for future use) ────────────────────────
-    # "distilbert_ft",
+    # ── Fine-tune only ────────────────────────
+    "distilbert_ft",
 
-    # ── MLM pretrain + fine-tune (active) ────────────────────────────────
+    # ── MLM pretrain + fine-tune────────────────────────────────
     "distilbert_mlm_ft",
+
+    # ── BERT-base (heavier, 110M params) ──────────────────────
+    "bert_ft",
+    "bert_mlm_ft",
 ]
 ALL_SEEDS = [42, 123, 456]
 
-# Variants that are lightweight and can share CPU cores easily
+
+# Variants that are lightweight
 STATISTICAL_VARIANTS = {"tfidf", "word2vec", "fasttext", "doc2vec"}
-# Variants that are CPU/GPU-heavy (DistilBERT inference or training)
-HEAVY_VARIANTS = {"distilbert_frozen", "distilbert_ft", "distilbert_mlm_ft"}
+# Variants that are CPU/GPU-heavy
+HEAVY_VARIANTS = {"distilbert_frozen", "distilbert_ft", "distilbert_mlm_ft",
+                   "bert_ft", "bert_mlm_ft"}
 
 
 # ─── Ray remote task ────────────────────────────────────────────────────────
@@ -159,7 +150,7 @@ def run_experiment_remote(
     with start_run(run_name, tags={"variant": variant, "seed": str(seed), "runner": "ray"}):
         log_params(params)
 
-        if variant in ("distilbert_ft", "distilbert_mlm_ft"):
+        if variant in ("distilbert_ft", "distilbert_mlm_ft", "bert_ft", "bert_mlm_ft"):
             metrics = _run_distilbert_e2e(variant, seed, train_df, val_df, test_df, device)
         else:
             metrics = _run_statistical(variant, seed, train_df, val_df, test_df, device)
@@ -239,10 +230,12 @@ def main(
     tasks.sort(key=lambda t: (t[0] in HEAVY_VARIANTS, t[0], t[1]))
 
     # ── Resource allocation per task type ────────────────────────────────────
-    # Statistical: 1 CPU each (e.g., 8-core laptop → 8 run at once)
-    # DistilBERT:  half the CPUs (e.g., 8-core → 4 CPUs each, 2 at once)
+    # Statistical: 1 CPU each (many run in parallel)
+    # DistilBERT:  4 CPUs each (DataLoader workers) + 1 GPU — the GPU does
+    #              the heavy lifting, so we don't need to hog CPUs.
+    #              On small local clusters (≤16 CPUs), fall back to half.
     cpus_statistical = 1
-    cpus_heavy = max(total_cpus // 2, 2)
+    cpus_heavy = 4 if total_cpus > 16 else max(total_cpus // 2, 2)
 
     # If user set max_concurrent, give each task fewer CPUs accordingly
     if max_concurrent:
