@@ -443,7 +443,7 @@ def pretrain_mlm(
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=mlm_lr)
-    scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
+    scaler = torch.cuda.amp.GradScaler(enabled=device.type == "cuda")
 
     import json as _json
     start_epoch = 1
@@ -477,7 +477,7 @@ def pretrain_mlm(
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"].to(device)
             optimizer.zero_grad()
-            with torch.amp.autocast("cuda", enabled=use_amp):
+            with torch.cuda.amp.autocast(enabled=use_amp):
                 outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
             scaler.scale(outputs.loss).backward()
             scaler.step(optimizer)
@@ -588,7 +588,7 @@ def train_distilbert(
         collate_fn=lambda b: _collate_pad(b, pad_id), persistent_workers=True,
     )
 
-    scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
+    scaler = torch.cuda.amp.GradScaler(enabled=device.type == "cuda")
     use_amp = device.type == "cuda"
 
     best_pr_auc = -1.0
@@ -631,7 +631,7 @@ def train_distilbert(
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
             optimizer.zero_grad()
-            with torch.amp.autocast("cuda", enabled=use_amp):
+            with torch.cuda.amp.autocast(enabled=use_amp):
                 logits = model(input_ids, attention_mask)
                 loss = criterion(logits, labels)
             scaler.scale(loss).backward()
@@ -643,7 +643,7 @@ def train_distilbert(
 
         model.eval()
         all_scores: List[np.ndarray] = []
-        with torch.no_grad(), torch.amp.autocast("cuda", enabled=use_amp):
+        with torch.no_grad(), torch.cuda.amp.autocast(enabled=use_amp):
             for batch in val_loader:
                 iids = batch["input_ids"].to(device)
                 amsk = batch["attention_mask"].to(device)
