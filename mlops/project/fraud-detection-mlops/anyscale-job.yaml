@@ -13,21 +13,21 @@
 #   anyscale job status <job-id>                       # Check status
 #   anyscale job list                                  # List all jobs
 
-name: fraud-detection-training
+name: fraud-detection-training-ft
 
-# Anyscale-hosted cloud (from console — use name, not ID)
+# Anyscale-hosted cloud
 cloud: "Anyscale Cloud"
 
 # Compute config created in Anyscale console
-compute_config: "training-gpu:1"
+compute_config: "training-with-gpu:1"
 
-# Entry point: run the Ray-distributed training script
-entrypoint: python -m src.training.train_ray --variants distilbert_mlm_ft --seeds 42 123 456
+# training script
+entrypoint: python -m src.training.train_ray --variants distilbert_ft bert_ft --seeds 42 123 456
 
-# Upload project files to the cluster
+# Uploading project files to the cluster
 working_dir: "."
 
-# Exclude large/unnecessary files from upload
+# Exclude unnecessary files from upload
 excludes:
   - data/raw/
   - .git/
@@ -37,6 +37,7 @@ excludes:
   - "*.pyc"
   - venv/
   - venv_wsl/
+  - .venv310
 
 # Pip dependencies to install on the cluster
 requirements:

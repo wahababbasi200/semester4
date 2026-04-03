@@ -334,12 +334,13 @@ def _run_distilbert_e2e(
     val_strings, _, y_val = _get_arrays(val_df)
     test_strings, _, y_test = _get_arrays(test_df)
 
-    dc = CFG.get("models", {}).get("distilbert", {})
+    config_key = "bert" if variant.startswith("bert_") else "distilbert"
+    dc = CFG.get("models", {}).get(config_key, {})
     base_model_name = dc.get("model_name", "distilbert-base-uncased")
     adir = _artifact_dir(variant, seed)
 
     model_name = base_model_name
-    if variant == "distilbert_mlm_ft":
+    if variant in ("distilbert_mlm_ft", "bert_mlm_ft"):
         mlm_save = adir / "pretrained_mlm"
         logger.info("=== MLM pretraining (seed=%d) ===", seed)
         model_name = pretrain_mlm(
@@ -457,7 +458,7 @@ def run_experiment(
     with start_run(run_name, tags={"variant": variant, "seed": str(seed)}):
         log_params(params)
 
-        if variant in ("distilbert_ft", "distilbert_mlm_ft"):
+        if variant in ("distilbert_ft", "distilbert_mlm_ft", "bert_ft", "bert_mlm_ft"):
             metrics = _run_distilbert_e2e(variant, seed, train_df, val_df, test_df, device)
         else:
             metrics = _run_statistical(variant, seed, train_df, val_df, test_df, device)

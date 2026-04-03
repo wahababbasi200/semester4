@@ -51,7 +51,7 @@ models:
     activation: "relu"
 
   training:
-    batch_size: 32
+    batch_size: 128
     max_epochs_mlp: 50
     max_epochs_distilbert: 10
     early_stopping_patience: 5
@@ -59,7 +59,7 @@ models:
     optimizer: "adam"
     lr_mlp: 1.0e-3
     lr_distilbert: 2.0e-5
-    subsample_nonfraud_ratio: 15  # keep all fraud + this many × fraud of non-fraud; null to use full data
+    subsample_nonfraud_ratio: null  # null = use full training data (no subsampling)
 
   tfidf:
     max_features: 5000
@@ -90,7 +90,16 @@ models:
     cls_projection_dim: 128
     mlm_epochs: 5
     mlm_lr: 5.0e-5
-    mlm_batch_size: 32
+    mlm_batch_size: 128
+    mlm_probability: 0.15
+
+  bert:
+    model_name: "bert-base-uncased"
+    max_length: 128
+    cls_projection_dim: 128
+    mlm_epochs: 5
+    mlm_lr: 5.0e-5
+    mlm_batch_size: 128
     mlm_probability: 0.15
 
 mlflow:

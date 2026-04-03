@@ -120,7 +120,7 @@ class DistilBERTEmbedder:
         logger.info("Loading DistilBERT tokeniser + model: %s", model_name)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self._bert = AutoModel.from_pretrained(model_name).to(self.device)
-        bert_dim = self._bert.config.dim  # 768 for distilbert-base-uncased
+        bert_dim = getattr(self._bert.config, "dim", None) or self._bert.config.hidden_size
         self._projection = nn.Linear(bert_dim, cls_projection_dim).to(self.device)
 
         # Freeze everything — projection is random but frozen for fair comparison
@@ -153,7 +153,7 @@ class DistilBERTEmbedder:
         import json as _json
 
         n = len(token_strings)
-        bert_dim = self._bert.config.dim  # 768
+        bert_dim = getattr(self._bert.config, "dim", None) or self._bert.config.hidden_size
         self._bert.eval()
 
         # ── checkpoint / memmap setup ────────────────────────────────────────
@@ -299,7 +299,7 @@ class DistilBERTClassifier(nn.Module):
     ) -> None:
         super().__init__()
         self.bert = AutoModel.from_pretrained(model_name)
-        bert_dim = self.bert.config.dim  # 768
+        bert_dim = getattr(self.bert.config, "dim", None) or self.bert.config.hidden_size
 
         self.projection = nn.Sequential(
             nn.Linear(bert_dim, cls_projection_dim),
@@ -438,10 +438,12 @@ def pretrain_mlm(
         batch_size=mlm_batch_size,
         shuffle=True,
         collate_fn=collator,
-        num_workers=0,
+        num_workers=2,
+        persistent_workers=True,
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=mlm_lr)
+    scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
 
     import json as _json
     start_epoch = 1
@@ -461,10 +463,13 @@ def pretrain_mlm(
                 _saved = torch.load(_ckpt, map_location=device)
                 model.load_state_dict(_saved["model_state"])
                 optimizer.load_state_dict(_saved["optimizer_state"])
+                if "scaler_state" in _saved:
+                    scaler.load_state_dict(_saved["scaler_state"])
                 start_epoch = _epoch_done + 1
 
     model.train()
 
+    use_amp = device.type == "cuda"
     for epoch in range(start_epoch, mlm_epochs + 1):
         total_loss = 0.0
         for batch in loader:
@@ -472,23 +477,26 @@ def pretrain_mlm(
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"].to(device)
             optimizer.zero_grad()
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-            outputs.loss.backward()
-            optimizer.step()
+            with torch.amp.autocast("cuda", enabled=use_amp):
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+            scaler.scale(outputs.loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             total_loss += outputs.loss.item()
         avg_loss = total_loss / len(loader)
         logger.info("MLM epoch %d/%d  loss=%.4f", epoch, mlm_epochs, avg_loss)
         if _mlm_ckpt_dir is not None:
             torch.save(
-                {"model_state": model.state_dict(), "optimizer_state": optimizer.state_dict()},
+                {"model_state": model.state_dict(), "optimizer_state": optimizer.state_dict(),
+                 "scaler_state": scaler.state_dict()},
                 _mlm_ckpt_dir / "checkpoint.pt",
             )
             (_mlm_ckpt_dir / "progress.json").write_text(_json.dumps({"epoch_done": epoch}))
             logger.info("MLM checkpoint saved: epoch %d/%d", epoch, mlm_epochs)
 
-    # Save the DistilBERT backbone (not the MLM head) for subsequent fine-tuning
-    # Extract backbone from AutoModelForMaskedLM
-    backbone = model.distilbert  # DistilBertModel inside the MLM wrapper
+    # Save the backbone (not the MLM head) for subsequent fine-tuning.
+    # DistilBERT wraps it as model.distilbert, BERT as model.bert.
+    backbone = getattr(model, "distilbert", None) or model.bert
     backbone.save_pretrained(save_path)
     tokenizer.save_pretrained(save_path)
     logger.info("MLM pretrained backbone saved → %s", save_path)
@@ -572,13 +580,16 @@ def train_distilbert(
 
     pad_id = tokenizer.pad_token_id or 0
     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True, num_workers=0,
-        collate_fn=lambda b: _collate_pad(b, pad_id),
+        train_dataset, batch_size=batch_size, shuffle=True, num_workers=2,
+        collate_fn=lambda b: _collate_pad(b, pad_id), persistent_workers=True,
     )
     val_loader = DataLoader(
-        val_dataset, batch_size=batch_size * 2, shuffle=False, num_workers=0,
-        collate_fn=lambda b: _collate_pad(b, pad_id),
+        val_dataset, batch_size=batch_size * 2, shuffle=False, num_workers=2,
+        collate_fn=lambda b: _collate_pad(b, pad_id), persistent_workers=True,
     )
+
+    scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
+    use_amp = device.type == "cuda"
 
     best_pr_auc = -1.0
     best_state: Optional[Dict] = None
@@ -602,6 +613,8 @@ def train_distilbert(
                 _saved = torch.load(_ckpt, map_location=device)
                 model.load_state_dict(_saved["model_state"])
                 optimizer.load_state_dict(_saved["optimizer_state"])
+                if "scaler_state" in _saved:
+                    scaler.load_state_dict(_saved["scaler_state"])
                 best_pr_auc = _saved["best_pr_auc"]
                 best_epoch = _saved["best_epoch"]
                 best_state = _saved["best_state"]
@@ -618,17 +631,19 @@ def train_distilbert(
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
             optimizer.zero_grad()
-            logits = model(input_ids, attention_mask)
-            loss = criterion(logits, labels)
-            loss.backward()
-            optimizer.step()
+            with torch.amp.autocast("cuda", enabled=use_amp):
+                logits = model(input_ids, attention_mask)
+                loss = criterion(logits, labels)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             epoch_loss += loss.item() * len(labels)
         epoch_loss /= len(train_labels)
         train_losses.append(epoch_loss)
 
         model.eval()
         all_scores: List[np.ndarray] = []
-        with torch.no_grad():
+        with torch.no_grad(), torch.amp.autocast("cuda", enabled=use_amp):
             for batch in val_loader:
                 iids = batch["input_ids"].to(device)
                 amsk = batch["attention_mask"].to(device)
@@ -655,6 +670,7 @@ def train_distilbert(
             torch.save({
                 "model_state": model.state_dict(),
                 "optimizer_state": optimizer.state_dict(),
+                "scaler_state": scaler.state_dict(),
                 "best_pr_auc": best_pr_auc,
                 "best_epoch": best_epoch,
                 "best_state": best_state,
