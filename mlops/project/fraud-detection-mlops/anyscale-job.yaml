@@ -13,7 +13,7 @@
 #   anyscale job status <job-id>                       # Check status
 #   anyscale job list                                  # List all jobs
 
-name: fraud-detection-training-ft
+name: fraud-detection-training-full-v2
 
 # Anyscale-hosted cloud
 cloud: "Anyscale Cloud"
@@ -22,7 +22,7 @@ cloud: "Anyscale Cloud"
 compute_config: "training-with-gpu:1"
 
 # training script
-entrypoint: python -m src.training.train_ray --variants distilbert_ft bert_ft --seeds 42 123 456
+entrypoint: python -m src.training.train_ray --variants distilbert_ft distilbert_mlm_ft bert_ft --seeds 42 123 456
 
 # Uploading project files to the cluster
 working_dir: "."
@@ -38,6 +38,14 @@ excludes:
   - venv/
   - venv_wsl/
   - .venv310
+  - data/raw/
+  - data/processed/eda
+  - data/processed/bert_cls_cache
+  - data/processed/eda/processing/paysim_filtered.parquet
+  - data/processed/eda/processing/receiver_accounts.parquet
+  - data/processed/eda/processing/test_accounts.parquet
+  - data/processed/eda/processing/train_accounts.parquet
+  - data/processed/eda/processing/val_accounts.parquet
 
 # Pip dependencies to install on the cluster
 requirements:

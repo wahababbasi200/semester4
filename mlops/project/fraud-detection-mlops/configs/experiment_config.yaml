@@ -59,7 +59,7 @@ models:
     optimizer: "adam"
     lr_mlp: 1.0e-3
     lr_distilbert: 2.0e-5
-    subsample_nonfraud_ratio: null  # null = use full training data (no subsampling)
+    subsample_nonfraud_ratio: 15  # keep all fraud + 15× fraud of non-fraud
 
   tfidf:
     max_features: 5000
