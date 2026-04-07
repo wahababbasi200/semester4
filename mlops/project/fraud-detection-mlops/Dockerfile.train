@@ -1,0 +1,40 @@
+# Dockerfile.train
+# ----------------
+# GPU training image for Northflank (or any container platform).
+# Does NOT include Ray — runs experiments sequentially on a single GPU.
+#
+# Build:
+#   docker build -f Dockerfile.train -t fraud-train .
+#
+# Run locally (with NVIDIA Docker):
+#   docker run --gpus all fraud-train \
+#     python -m src.training.train_northflank --variants distilbert_ft --seeds 42
+#
+# On Northflank:
+#   Push to registry, create a Job with GPU, set image, override CMD.
+
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install system deps for torch + HuggingFace
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies (exclude ray, notebooks, serving deps)
+COPY requirements-train.txt .
+RUN pip install --no-cache-dir -r requirements-train.txt
+
+# Copy source code and configs
+COPY src/ ./src/
+COPY configs/ ./configs/
+
+# Copy tokenized data (small — ~40MB)
+COPY data/processed/preprocessing/ ./data/processed/preprocessing/
+
+# Create artifact directory
+RUN mkdir -p /app/model_artifacts
+
+# Default: run all configured variants
+CMD ["python", "-m", "src.training.train_northflank"]
