@@ -86,6 +86,32 @@ def _collate_pad(batch: List[Dict], pad_id: int = 0) -> Dict[str, torch.Tensor]:
     return {"input_ids": padded_ids, "attention_mask": padded_masks, "label": labels}
 
 
+# ─── MLM Dataset (module-level for Windows multiprocessing pickling) ─────────
+
+class MLMDataset(Dataset):
+    """Tokenise texts on-the-fly for masked-language-model pretraining."""
+
+    def __init__(self, texts, tokenizer, max_length):
+        self.texts = texts
+        self.tok = tokenizer
+        self.max_length = max_length
+
+    def __len__(self):
+        return len(self.texts)
+
+    def __getitem__(self, idx):
+        enc = self.tok(
+            self.texts[idx],
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors="pt",
+        )
+        return {
+            "input_ids": enc["input_ids"].squeeze(0),
+            "attention_mask": enc["attention_mask"].squeeze(0),
+        }
+
+
 # ─── Frozen-variant embedder ─────────────────────────────────────────────────
 
 class DistilBERTEmbedder:
@@ -411,28 +437,7 @@ def pretrain_mlm(
         mlm_probability=mlm_probability,
     )
 
-    class _MLMDataset(Dataset):
-        def __init__(self, texts, tokenizer, max_length):
-            self.texts = texts
-            self.tok = tokenizer
-            self.max_length = max_length
-
-        def __len__(self):
-            return len(self.texts)
-
-        def __getitem__(self, idx):
-            enc = self.tok(
-                self.texts[idx],
-                truncation=True,
-                max_length=self.max_length,
-                return_tensors="pt",
-            )
-            return {
-                "input_ids": enc["input_ids"].squeeze(0),
-                "attention_mask": enc["attention_mask"].squeeze(0),
-            }
-
-    dataset = _MLMDataset(train_token_strings, tokenizer, max_length)
+    dataset = MLMDataset(train_token_strings, tokenizer, max_length)
     loader = DataLoader(
         dataset,
         batch_size=mlm_batch_size,
