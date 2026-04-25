@@ -79,7 +79,7 @@ def preprocess(df: pd.DataFrame, encoders: dict = None,
             df[col] = df[col].map(mapping).fillna(global_fraud_mean)
 
     # Label-encode remaining string / object columns
-    for col in df.select_dtypes(include=["object", "str", "category"]).columns:
+    for col in df.select_dtypes(include=["object", "category"]).columns:
         le = LabelEncoder()
         df[col] = le.fit_transform(df[col].astype(str))
 
