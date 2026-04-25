@@ -1,0 +1,80 @@
+# Helm values for kube-prometheus-stack — tuned for 8GB Minikube
+# Install:
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm repo update
+#   helm install kube-prometheus prometheus-community/kube-prometheus-stack \
+#     -n monitoring --create-namespace -f observability/prometheus-values.yaml
+
+prometheus:
+  prometheusSpec:
+    retention: 12h                  # keep 12h on small disk
+    resources:
+      requests:
+        cpu: 200m
+        memory: 400Mi
+      limits:
+        cpu: 500m
+        memory: 800Mi
+    additionalScrapeConfigs:
+      - job_name: fraud-serve
+        static_configs:
+          - targets: ["fraud-serve-svc.fraud-a4.svc.cluster.local:8000"]
+        metrics_path: /metrics
+        scrape_interval: 15s
+    ruleSelector:
+      matchLabels:
+        role: alert-rules
+    ruleNamespaceSelector:
+      matchNames:
+        - monitoring
+        - fraud-a4
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 100Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    configSecret: alertmanager-main-config
+
+grafana:
+  enabled: true
+  adminPassword: "fraud-admin-2024"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 200Mi
+    limits:
+      cpu: 300m
+      memory: 512Mi
+  service:
+    type: NodePort
+    nodePort: 30300
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: fraud-dashboards
+          folder: "Fraud Detection"
+          type: file
+          options:
+            path: /var/lib/grafana/dashboards/fraud
+  dashboardsConfigMaps:
+    fraud: grafana-dashboards-configmap
+
+# Disable heavy components to save RAM on Minikube
+kubeStateMetrics:
+  enabled: true
+nodeExporter:
+  enabled: true
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 200Mi
+    limits:
+      cpu: 200m
+      memory: 400Mi

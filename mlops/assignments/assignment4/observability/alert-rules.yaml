@@ -1,0 +1,124 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fraud-detection-alerts
+  namespace: monitoring
+  labels:
+    role: alert-rules
+    app: fraud-detection
+spec:
+  groups:
+    # ── Model Performance Alerts ─────────────────────────────────────────────
+    - name: fraud.model
+      interval: 30s
+      rules:
+        - alert: FraudRecallDrop
+          expr: fraud_model_recall < 0.70
+          for: 10m
+          labels:
+            severity: critical
+            team: mlops
+          annotations:
+            summary: "Fraud recall dropped below 70%"
+            description: >
+              Model recall is {{ $value | humanizePercentage }}.
+              This means too many fraud cases are being missed.
+              Trigger retraining via CI/CD.
+
+        - alert: FraudPrecisionDrop
+          expr: fraud_model_precision < 0.50
+          for: 15m
+          labels:
+            severity: warning
+            team: mlops
+          annotations:
+            summary: "Fraud precision dropped below 50%"
+            description: >
+              Model precision is {{ $value | humanizePercentage }}.
+              High false positive rate — investigate model or threshold.
+
+        - alert: FraudAUCDrop
+          expr: fraud_model_auc_roc < 0.80
+          for: 10m
+          labels:
+            severity: critical
+            team: mlops
+          annotations:
+            summary: "AUC-ROC dropped below 0.80"
+            description: "AUC-ROC is {{ $value }}. Model may need retraining."
+
+    # ── Data Drift Alerts ────────────────────────────────────────────────────
+    - name: fraud.drift
+      interval: 60s
+      rules:
+        - alert: DataDriftHigh
+          expr: max(fraud_feature_psi) > 0.20
+          for: 15m
+          labels:
+            severity: critical
+            team: mlops
+          annotations:
+            summary: "Major data drift detected (PSI > 0.20)"
+            description: >
+              Max PSI across features is {{ $value }}.
+              Input distribution has shifted significantly.
+              Trigger retraining pipeline.
+
+        - alert: DataDriftMinor
+          expr: max(fraud_feature_psi) > 0.10
+          for: 30m
+          labels:
+            severity: warning
+            team: mlops
+          annotations:
+            summary: "Minor data drift detected (PSI > 0.10)"
+            description: "Max PSI is {{ $value }}. Monitor closely."
+
+        - alert: HighMissingValueRate
+          expr: fraud_input_missing_rate > 0.30
+          for: 5m
+          labels:
+            severity: warning
+            team: mlops
+          annotations:
+            summary: "High missing value rate in incoming requests"
+            description: "{{ $value | humanizePercentage }} of input values are missing."
+
+    # ── API / System Alerts ──────────────────────────────────────────────────
+    - name: fraud.api
+      interval: 15s
+      rules:
+        - alert: APILatencyHigh
+          expr: >
+            histogram_quantile(0.95,
+              rate(fraud_api_latency_seconds_bucket[5m])
+            ) > 0.50
+          for: 5m
+          labels:
+            severity: warning
+            team: mlops
+          annotations:
+            summary: "API p95 latency > 500ms"
+            description: "p95 latency is {{ $value }}s."
+
+        - alert: APIErrorRateHigh
+          expr: >
+            rate(fraud_api_errors_total[5m]) /
+            rate(fraud_api_requests_total[5m]) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+            team: mlops
+          annotations:
+            summary: "API error rate > 5%"
+            description: "Error rate is {{ $value | humanizePercentage }}."
+
+        - alert: APIDown
+          expr: up{job="fraud-serve"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            team: mlops
+          annotations:
+            summary: "Fraud API is down"
+            description: "fraud-serve has been unreachable for > 2 minutes."

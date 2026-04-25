@@ -1,0 +1,93 @@
+# Stage 3 — Continuous Deployment
+# Triggers on: successful build (push to main)
+# Runs on: self-hosted runner on EC2 Minikube box
+#
+# One-time EC2 runner setup:
+#   mkdir -p ~/actions-runner && cd ~/actions-runner
+#   curl -o actions-runner-linux-x64.tar.gz -L \
+#     https://github.com/actions/runner/releases/download/v2.316.0/actions-runner-linux-x64-2.316.0.tar.gz
+#   tar xzf actions-runner-linux-x64.tar.gz
+#   ./config.sh --url https://github.com/GITHUB_USER/GITHUB_REPO \
+#     --token <RUNNER_TOKEN> --labels self-hosted,minikube --unattended
+#   sudo ./svc.sh install && sudo ./svc.sh start
+
+name: CD — Deploy to Minikube
+
+on:
+  workflow_run:
+    workflows: ["Build — Docker Images"]
+    types: [completed]
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      model_type:
+        description: "Model type to train"
+        default: "xgb"
+        type: choice
+        options: [xgb, lgbm, rf_fs]
+      imbalance_strategy:
+        description: "Imbalance handling"
+        default: "class_weight"
+        type: choice
+        options: [class_weight, smote]
+
+jobs:
+  deploy:
+    name: Deploy to EC2 Minikube
+    runs-on: [self-hosted, minikube]
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Apply k8s manifests (namespace, quota, PVC)
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/resourcequota.yaml
+          kubectl apply -f k8s/pv-pvc.yaml
+          echo "k8s manifests applied"
+
+      - name: Flush KFP cache (prevents stale cache hits)
+        run: bash scripts/cache_nuke.sh
+
+      - name: Pull and load serving image into Minikube
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/fraud-serve:latest"
+          echo "Loading $IMAGE into Minikube..."
+          docker pull $IMAGE
+          minikube image load $IMAGE
+
+      - name: Submit Kubeflow pipeline
+        env:
+          MODEL_TYPE: ${{ github.event.inputs.model_type || 'xgb' }}
+          IMBALANCE: ${{ github.event.inputs.imbalance_strategy || 'class_weight' }}
+        run: |
+          # Port-forward KFP UI (may already be running)
+          pkill -f "port-forward.*ml-pipeline-ui" || true
+          sleep 2
+          nohup kubectl -n kubeflow port-forward --address 127.0.0.1 \
+            svc/ml-pipeline-ui 8080:80 > /tmp/pf.log 2>&1 &
+          sleep 5
+          python scripts/submit_pipeline.py \
+            --model $MODEL_TYPE \
+            --imbalance $IMBALANCE \
+            --host http://localhost:8080
+          echo "Pipeline submitted"
+
+      - name: Update inference deployment
+        run: |
+          SERVE_IMAGE="ghcr.io/${{ github.repository_owner }}/fraud-serve:latest"
+          # Patch the deployment image (update in-place)
+          kubectl set image deployment/fraud-serve \
+            fraud-serve=$SERVE_IMAGE \
+            -n fraud-a4 --record || \
+          kubectl apply -f k8s/inference-deploy.yaml
+          kubectl rollout status deployment/fraud-serve -n fraud-a4 --timeout=120s
+
+      - name: Verify deployment
+        run: |
+          sleep 10
+          kubectl get pods -n fraud-a4
+          NODE_IP=$(minikube ip)
+          curl -f http://$NODE_IP:30800/health && echo "Health check PASSED"

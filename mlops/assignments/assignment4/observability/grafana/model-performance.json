@@ -1,0 +1,91 @@
+{
+  "title": "Fraud Model — Performance",
+  "uid": "fraud-model-perf",
+  "tags": ["fraud-detection", "ml-metrics"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Fraud Recall (current)",
+      "type": "stat",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "targets": [{"expr": "fraud_model_recall", "legendFormat": "Recall"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 0.70}, {"color": "green", "value": 0.85}]
+          },
+          "mappings": []
+        }
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "colorMode": "background"}
+    },
+    {
+      "id": 2,
+      "title": "Fraud Precision (current)",
+      "type": "stat",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "targets": [{"expr": "fraud_model_precision", "legendFormat": "Precision"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "min": 0, "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 0.50}, {"color": "green", "value": 0.70}]}
+        }
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"}
+    },
+    {
+      "id": 3,
+      "title": "AUC-ROC (current)",
+      "type": "stat",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "targets": [{"expr": "fraud_model_auc_roc", "legendFormat": "AUC-ROC"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short", "min": 0.5, "max": 1.0,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": 0}, {"color": "yellow", "value": 0.80}, {"color": "green", "value": 0.90}]}
+        }
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"}
+    },
+    {
+      "id": 4,
+      "title": "Recall & Precision Trend Over Time",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 4, "w": 24, "h": 10},
+      "targets": [
+        {"expr": "fraud_model_recall",    "legendFormat": "Recall"},
+        {"expr": "fraud_model_precision", "legendFormat": "Precision"},
+        {"expr": "fraud_model_auc_roc",   "legendFormat": "AUC-ROC"}
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "min": 0, "max": 1},
+        "overrides": [{"matcher": {"id": "byName", "options": "AUC-ROC"}, "properties": [{"id": "unit", "value": "short"}]}]
+      }
+    },
+    {
+      "id": 5,
+      "title": "Prediction Confidence Distribution",
+      "type": "histogram",
+      "gridPos": {"x": 0, "y": 14, "w": 12, "h": 8},
+      "targets": [{"expr": "rate(fraud_prediction_confidence_bucket[5m])", "legendFormat": "{{le}}"}]
+    },
+    {
+      "id": 6,
+      "title": "Fraud Detection Rate (rolling 5m)",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 14, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "rate(fraud_predictions_total{label='fraud'}[5m]) / rate(fraud_predictions_total[5m])",
+          "legendFormat": "Fraud detection rate"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}}
+    }
+  ]
+}

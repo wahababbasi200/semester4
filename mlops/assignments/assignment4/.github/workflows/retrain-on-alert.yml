@@ -1,0 +1,59 @@
+# Stage 4 — Intelligent Trigger: Automated Retraining on Drift/Recall Alerts
+#
+# Triggered by: Alertmanager webhook → GitHub repository_dispatch
+#   When Prometheus fires FraudRecallDrop or DataDriftHigh alerts,
+#   Alertmanager POSTs to:
+#     POST https://api.github.com/repos/GITHUB_USER/GITHUB_REPO/dispatches
+#     {"event_type": "model-drift", "client_payload": {"alert": "FraudRecallDrop"}}
+#
+# This workflow responds by submitting a fresh retraining run on Minikube.
+
+name: Retrain on Alert — Intelligent Trigger
+
+on:
+  repository_dispatch:
+    types: [model-drift]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual retraining trigger"
+        default: "manual"
+
+jobs:
+  retrain:
+    name: Automated Retraining (triggered by alert)
+    runs-on: [self-hosted, minikube]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log trigger details
+        run: |
+          echo "=== Retraining Triggered ==="
+          echo "Event type:    ${{ github.event_name }}"
+          echo "Alert type:    ${{ github.event.client_payload.alert || 'N/A' }}"
+          echo "Reason:        ${{ github.event.client_payload.reason || github.event.inputs.reason }}"
+          echo "Timestamp:     $(date -u)"
+
+      - name: Flush KFP cache
+        run: bash scripts/cache_nuke.sh
+
+      - name: Submit retraining pipeline
+        run: |
+          pkill -f "port-forward.*ml-pipeline-ui" || true
+          sleep 2
+          nohup kubectl -n kubeflow port-forward --address 127.0.0.1 \
+            svc/ml-pipeline-ui 8080:80 > /tmp/pf.log 2>&1 &
+          sleep 5
+          python scripts/submit_pipeline.py \
+            --model xgb \
+            --imbalance class_weight \
+            --host http://localhost:8080 \
+            --experiment fraud-detection-retrain
+          echo "Retraining pipeline submitted"
+
+      - name: Notify completion
+        run: |
+          echo "=== Retraining pipeline submitted at $(date -u) ==="
+          echo "Monitor pipeline at: http://$(minikube ip):$(kubectl get svc ml-pipeline-ui -n kubeflow -o jsonpath='{.spec.ports[0].nodePort}')/"

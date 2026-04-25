@@ -1,0 +1,34 @@
+# PersistentVolume — hostPath on EC2 at /mnt/ml-data/assignment4
+# Accessible inside Minikube pods via the PVC below.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: fraud-a4-pv
+  labels:
+    app: fraud-detection
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
+  hostPath:
+    path: /mnt/ml-data/assignment4   # EC2 path — contains data/ and models/ subdirs
+    type: DirectoryOrCreate
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fraud-a4-pvc
+  namespace: kubeflow           # pipeline pods run in kubeflow namespace
+  labels:
+    app: fraud-detection
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  resources:
+    requests:
+      storage: 10Gi

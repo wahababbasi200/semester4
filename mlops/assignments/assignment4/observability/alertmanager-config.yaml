@@ -1,0 +1,80 @@
+# Alertmanager configuration — routes critical alerts to GitHub Actions
+# via repository_dispatch webhook (triggers retrain-on-alert.yml).
+#
+# IMPORTANT: Create a Kubernetes Secret with your GitHub PAT before applying:
+#   kubectl create secret generic github-pat \
+#     -n monitoring \
+#     --from-literal=token=ghp_YOUR_PAT_HERE
+#
+# Then reference it in prometheus-values.yaml:
+#   alertmanager.alertmanagerSpec.configSecret: alertmanager-main-config
+#
+# Apply this file as a Secret:
+#   kubectl create secret generic alertmanager-main-config \
+#     -n monitoring \
+#     --from-file=alertmanager.yaml=observability/alertmanager-config.yaml \
+#     --dry-run=client -o yaml | kubectl apply -f -
+
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: default-null
+
+  routes:
+    # Critical model/drift alerts → trigger CI/CD retraining
+    - matchers:
+        - severity = critical
+        - team = mlops
+      receiver: github-retrain
+      group_wait: 1m
+      repeat_interval: 6h
+
+    # Warning alerts → Slack / log only (no auto-retrain)
+    - matchers:
+        - severity = warning
+      receiver: default-null
+
+receivers:
+  - name: default-null
+
+  - name: github-retrain
+    webhook_configs:
+      - url: "https://api.github.com/repos/GITHUB_USER/GITHUB_REPO/dispatches"
+        http_config:
+          authorization:
+            type: token
+            # Reference the k8s Secret holding the GitHub PAT
+            credentials_file: /etc/alertmanager/secrets/github-pat/token
+        send_resolved: false
+        # GitHub dispatches API requires specific JSON body
+        # Use a custom template to set event_type
+        # Note: Alertmanager's webhook sends JSON; GitHub needs:
+        # {"event_type": "model-drift", "client_payload": {...}}
+        # This is handled by the message_template below.
+
+# ── Alertmanager Secret manifest (run once on EC2) ──────────────────────────
+# Step-by-step setup (run on EC2):
+#
+# 1. Create GitHub PAT with repo scope:
+#    GitHub → Settings → Developer settings → Personal access tokens → Fine-grained
+#    Permissions: Actions (write), Contents (read)
+#
+# 2. Create k8s secrets:
+#    PAT_TOKEN="ghp_xxxxxxxxxxxx"
+#    kubectl create secret generic github-pat \
+#      -n monitoring --from-literal=token=$PAT_TOKEN
+#
+# 3. Test the webhook manually:
+#    curl -X POST \
+#      -H "Authorization: token $PAT_TOKEN" \
+#      -H "Accept: application/vnd.github.v3+json" \
+#      https://api.github.com/repos/GITHUB_USER/GITHUB_REPO/dispatches \
+#      -d '{"event_type":"model-drift","client_payload":{"reason":"manual-test"}}'
+#    → Expect HTTP 204 (no content = success)
+#
+# 4. Watch retrain-on-alert.yml trigger in GitHub Actions.

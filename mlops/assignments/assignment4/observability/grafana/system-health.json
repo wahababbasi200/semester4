@@ -1,0 +1,72 @@
+{
+  "title": "Fraud API — System Health",
+  "uid": "fraud-system-health",
+  "tags": ["fraud-detection", "system"],
+  "timezone": "browser",
+  "refresh": "15s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate (req/s)",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "rate(fraud_api_requests_total[1m])",
+          "legendFormat": "{{method}} {{endpoint}} {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "API Latency — p50 / p95 / p99",
+      "type": "timeseries",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(fraud_api_latency_seconds_bucket[5m]))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(fraud_api_latency_seconds_bucket[5m]))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(fraud_api_latency_seconds_bucket[5m]))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Error Rate",
+      "type": "stat",
+      "gridPos": {"x": 0, "y": 8, "w": 6, "h": 4},
+      "targets": [
+        {
+          "expr": "rate(fraud_api_errors_total[5m]) / rate(fraud_api_requests_total[5m])",
+          "legendFormat": "Error rate"
+        }
+      ],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto"},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"steps": [{"color": "green", "value": 0}, {"color": "red", "value": 0.05}]}}}
+    },
+    {
+      "id": 4,
+      "title": "Prediction Throughput (fraud vs legit)",
+      "type": "timeseries",
+      "gridPos": {"x": 6, "y": 8, "w": 12, "h": 4},
+      "targets": [
+        {"expr": "rate(fraud_predictions_total{label='fraud'}[1m])", "legendFormat": "fraud"},
+        {"expr": "rate(fraud_predictions_total{label='legit'}[1m])", "legendFormat": "legit"}
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Active Alerts",
+      "type": "alertlist",
+      "gridPos": {"x": 0, "y": 12, "w": 24, "h": 6},
+      "options": {"alertName": "", "dashboardAlerts": false, "maxItems": 20, "stateFilter": {"firing": true}}
+    }
+  ]
+}

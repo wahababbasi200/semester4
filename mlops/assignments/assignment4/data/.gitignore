@@ -1,0 +1,9 @@
+# Ignore raw IEEE CIS files (too large to commit)
+train_transaction.csv
+train_identity.csv
+test_transaction.csv
+test_identity.csv
+*.csv
+
+# Keep the working sample parquet
+!sample_ieee_70k.parquet

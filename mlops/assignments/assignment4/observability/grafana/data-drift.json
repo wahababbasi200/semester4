@@ -1,0 +1,79 @@
+{
+  "title": "Fraud Data — Drift Monitor",
+  "uid": "fraud-data-drift",
+  "tags": ["fraud-detection", "drift"],
+  "timezone": "browser",
+  "refresh": "1m",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Max PSI Across All Features",
+      "type": "stat",
+      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 4},
+      "targets": [{"expr": "max(fraud_feature_psi)", "legendFormat": "Max PSI"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short", "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 0.10}, {"color": "red", "value": 0.20}]
+          }
+        }
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"}
+    },
+    {
+      "id": 2,
+      "title": "Missing Value Rate (incoming requests)",
+      "type": "stat",
+      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 4},
+      "targets": [{"expr": "fraud_input_missing_rate", "legendFormat": "Missing rate"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit", "min": 0, "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 0.20}, {"color": "red", "value": 0.40}]}
+        }
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background"}
+    },
+    {
+      "id": 3,
+      "title": "PSI per Feature (current snapshot)",
+      "type": "bargauge",
+      "gridPos": {"x": 0, "y": 4, "w": 24, "h": 10},
+      "targets": [{"expr": "fraud_feature_psi", "legendFormat": "{{feature}}"}],
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"]},
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short", "min": 0,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": 0}, {"color": "yellow", "value": 0.10}, {"color": "red", "value": 0.20}]}
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Feature PSI Trend Over Time",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 14, "w": 24, "h": 10},
+      "targets": [
+        {"expr": "fraud_feature_psi", "legendFormat": "{{feature}}"}
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": []
+      },
+      "options": {"tooltip": {"mode": "multi"}}
+    },
+    {
+      "id": 5,
+      "title": "Alert State — Drift Alerts",
+      "type": "alertlist",
+      "gridPos": {"x": 0, "y": 24, "w": 24, "h": 5},
+      "options": {"alertName": "DataDrift", "stateFilter": {"firing": true, "pending": true}}
+    }
+  ]
+}

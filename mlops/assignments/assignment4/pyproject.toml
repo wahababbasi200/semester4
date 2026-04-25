@@ -1,0 +1,12 @@
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+# E702 = multiple statements on one line (semicolons)
+# We use semicolons for compact matplotlib chains in plot helper functions
+ignore = ["E702"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

@@ -1,0 +1,1054 @@
+# PIPELINE DEFINITION
+# Name: fraud-detection-pipeline
+# Description: IEEE CIS Fraud Detection: 7-step MLOps pipeline with conditional deployment and retry mechanisms.
+# Inputs:
+#    cost_sensitive: bool [Default: False]
+#    data_path: str [Default: '/data/processed/sample_ieee_70k.parquet']
+#    deploy_auc_threshold: float [Default: 0.85]
+#    deploy_path: str [Default: '/data/models']
+#    eval_threshold: float [Default: 0.5]
+#    imbalance_strategy: str [Default: 'class_weight']
+#    model_type: str [Default: 'xgb']
+#    model_version: str [Default: 'v1']
+#    n_estimators: int [Default: 400.0]
+#    random_state: int [Default: 42.0]
+components:
+  comp-condition-2:
+    dag:
+      tasks:
+        deploy-model:
+          cachingOptions: {}
+          componentRef:
+            name: comp-deploy-model
+          inputs:
+            artifacts:
+              model_artifact:
+                componentInputArtifact: pipelinechannel--train-model-model_artifact
+              preprocessor_artifact:
+                componentInputArtifact: pipelinechannel--preprocess-data-preprocessor_artifact
+            parameters:
+              deploy_path:
+                componentInputParameter: pipelinechannel--deploy_path
+              model_version:
+                componentInputParameter: pipelinechannel--model_version
+          retryPolicy:
+            backoffDuration: 30s
+            backoffFactor: 2.0
+            backoffMaxDuration: 3600s
+            maxRetryCount: 2
+          taskInfo:
+            name: deploy-model
+    inputDefinitions:
+      artifacts:
+        pipelinechannel--preprocess-data-preprocessor_artifact:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        pipelinechannel--train-model-model_artifact:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+      parameters:
+        pipelinechannel--deploy_auc_threshold:
+          parameterType: NUMBER_DOUBLE
+        pipelinechannel--deploy_path:
+          parameterType: STRING
+        pipelinechannel--evaluate-model-Output:
+          parameterType: NUMBER_DOUBLE
+        pipelinechannel--model_version:
+          parameterType: STRING
+  comp-condition-3:
+    dag:
+      tasks:
+        skip-deploy:
+          cachingOptions: {}
+          componentRef:
+            name: comp-skip-deploy
+          inputs:
+            parameters:
+              auc_roc:
+                componentInputParameter: pipelinechannel--evaluate-model-Output
+              threshold:
+                componentInputParameter: pipelinechannel--deploy_auc_threshold
+          taskInfo:
+            name: skip-deploy
+    inputDefinitions:
+      parameters:
+        pipelinechannel--deploy_auc_threshold:
+          parameterType: NUMBER_DOUBLE
+        pipelinechannel--evaluate-model-Output:
+          parameterType: NUMBER_DOUBLE
+  comp-condition-branches-1:
+    dag:
+      tasks:
+        condition-2:
+          componentRef:
+            name: comp-condition-2
+          inputs:
+            artifacts:
+              pipelinechannel--preprocess-data-preprocessor_artifact:
+                componentInputArtifact: pipelinechannel--preprocess-data-preprocessor_artifact
+              pipelinechannel--train-model-model_artifact:
+                componentInputArtifact: pipelinechannel--train-model-model_artifact
+            parameters:
+              pipelinechannel--deploy_auc_threshold:
+                componentInputParameter: pipelinechannel--deploy_auc_threshold
+              pipelinechannel--deploy_path:
+                componentInputParameter: pipelinechannel--deploy_path
+              pipelinechannel--evaluate-model-Output:
+                componentInputParameter: pipelinechannel--evaluate-model-Output
+              pipelinechannel--model_version:
+                componentInputParameter: pipelinechannel--model_version
+          taskInfo:
+            name: "AUC above threshold \u2014 deploy"
+          triggerPolicy:
+            condition: inputs.parameter_values['pipelinechannel--evaluate-model-Output']
+              >= inputs.parameter_values['pipelinechannel--deploy_auc_threshold']
+        condition-3:
+          componentRef:
+            name: comp-condition-3
+          inputs:
+            parameters:
+              pipelinechannel--deploy_auc_threshold:
+                componentInputParameter: pipelinechannel--deploy_auc_threshold
+              pipelinechannel--evaluate-model-Output:
+                componentInputParameter: pipelinechannel--evaluate-model-Output
+          taskInfo:
+            name: "AUC below threshold \u2014 skip deploy"
+          triggerPolicy:
+            condition: '!(inputs.parameter_values[''pipelinechannel--evaluate-model-Output'']
+              >= inputs.parameter_values[''pipelinechannel--deploy_auc_threshold''])'
+    inputDefinitions:
+      artifacts:
+        pipelinechannel--preprocess-data-preprocessor_artifact:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        pipelinechannel--train-model-model_artifact:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+      parameters:
+        pipelinechannel--deploy_auc_threshold:
+          parameterType: NUMBER_DOUBLE
+        pipelinechannel--deploy_path:
+          parameterType: STRING
+        pipelinechannel--evaluate-model-Output:
+          parameterType: NUMBER_DOUBLE
+        pipelinechannel--model_version:
+          parameterType: STRING
+  comp-deploy-model:
+    executorLabel: exec-deploy-model
+    inputDefinitions:
+      artifacts:
+        model_artifact:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+        preprocessor_artifact:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        deploy_path:
+          defaultValue: /data/models
+          isOptional: true
+          parameterType: STRING
+        model_version:
+          defaultValue: v1
+          isOptional: true
+          parameterType: STRING
+  comp-engineer-features:
+    executorLabel: exec-engineer-features
+    inputDefinitions:
+      artifacts:
+        test_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        train_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        val_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        test_engineered:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        train_engineered:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        val_engineered:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-evaluate-model:
+    executorLabel: exec-evaluate-model
+    inputDefinitions:
+      artifacts:
+        model_artifact:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+        test_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        threshold:
+          defaultValue: 0.5
+          isOptional: true
+          parameterType: NUMBER_DOUBLE
+    outputDefinitions:
+      artifacts:
+        eval_metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+        plots_artifact:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        Output:
+          parameterType: NUMBER_DOUBLE
+  comp-ingest-data:
+    executorLabel: exec-ingest-data
+    inputDefinitions:
+      parameters:
+        data_path:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        output_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-preprocess-data:
+    executorLabel: exec-preprocess-data
+    inputDefinitions:
+      artifacts:
+        validated_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        preprocessor_artifact:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        test_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        train_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        val_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-skip-deploy:
+    executorLabel: exec-skip-deploy
+    inputDefinitions:
+      parameters:
+        auc_roc:
+          parameterType: NUMBER_DOUBLE
+        threshold:
+          parameterType: NUMBER_DOUBLE
+  comp-train-model:
+    executorLabel: exec-train-model
+    inputDefinitions:
+      artifacts:
+        train_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        val_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        cost_sensitive:
+          defaultValue: false
+          isOptional: true
+          parameterType: BOOLEAN
+        imbalance_strategy:
+          defaultValue: class_weight
+          isOptional: true
+          parameterType: STRING
+        model_type:
+          defaultValue: xgb
+          isOptional: true
+          parameterType: STRING
+        n_estimators:
+          defaultValue: 400.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+        random_state:
+          defaultValue: 42.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      artifacts:
+        model_artifact:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+  comp-validate-data:
+    executorLabel: exec-validate-data
+    inputDefinitions:
+      artifacts:
+        input_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        max_missing_ratio:
+          defaultValue: 0.99
+          isOptional: true
+          parameterType: NUMBER_DOUBLE
+        min_rows:
+          defaultValue: 1000.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      artifacts:
+        validated_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        validation_metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-deploy-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - deploy_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'joblib==1.3.2'\
+          \  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef deploy_model(\n    model_artifact: Input[Model],\n    preprocessor_artifact:\
+          \ Input[Dataset],\n    deploy_path: str = \"/data/models\",    # PVC-mounted\
+          \ serving path\n    model_version: str = \"v1\",\n):\n    \"\"\"\n    Copy\
+          \ the trained model and preprocessor to the serving path.\n    In production\
+          \ this would trigger a Kubernetes rolling-update;\n    here we write to\
+          \ the shared PVC so the FastAPI pod picks it up.\n    \"\"\"\n    import\
+          \ shutil\n    import os\n    import json\n\n    os.makedirs(deploy_path,\
+          \ exist_ok=True)\n\n    model_src = model_artifact.path\n    prep_src  =\
+          \ preprocessor_artifact.path\n\n    model_dst = os.path.join(deploy_path,\
+          \ \"best_model.pkl\")\n    prep_dst  = os.path.join(deploy_path, \"preprocessor.pkl\"\
+          )\n\n    shutil.copy(model_src, model_dst)\n    shutil.copy(prep_src,  prep_dst)\n\
+          \n    # Write version manifest\n    meta = {\n        \"version\":     \
+          \     model_version,\n        \"model_type\":       model_artifact.metadata.get(\"\
+          model_type\", \"unknown\"),\n        \"imbalance\":        model_artifact.metadata.get(\"\
+          imbalance_strategy\", \"unknown\"),\n        \"cost_sensitive\":   model_artifact.metadata.get(\"\
+          cost_sensitive\", \"false\"),\n    }\n    with open(os.path.join(deploy_path,\
+          \ \"model_meta.json\"), \"w\") as f:\n        json.dump(meta, f, indent=2)\n\
+          \n    print(f\"[deploy] Model deployed to {deploy_path}\")\n    print(f\"\
+          \  model:        {model_dst}\")\n    print(f\"  preprocessor: {prep_dst}\"\
+          )\n    print(f\"  meta:         {meta}\")\n    print(\"[deploy] FastAPI\
+          \ service will pick up new model on next request (lazy reload).\")\n\n"
+        image: python:3.9
+    exec-engineer-features:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - engineer_features
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas==2.1.4'\
+          \ 'pyarrow==15.0.2' 'numpy==1.26.4'  &&  python3 -m pip install --quiet\
+          \ --no-warn-script-location 'kfp==2.16.0' '--no-deps' 'typing-extensions>=3.7.4,<5;\
+          \ python_version<\"3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef engineer_features(\n    train_data: Input[Dataset],\n    val_data:\
+          \ Input[Dataset],\n    test_data: Input[Dataset],\n    train_engineered:\
+          \ Output[Dataset],\n    val_engineered: Output[Dataset],\n    test_engineered:\
+          \ Output[Dataset],\n):\n    \"\"\"Add TransactionAmt bins, time features,\
+          \ and C-column aggregates.\"\"\"\n    import pandas as pd\n    import numpy\
+          \ as np\n\n    FRAUD_COL = \"isFraud\"\n\n    def add_features(df: pd.DataFrame)\
+          \ -> pd.DataFrame:\n        d = df.copy()\n        if \"TransactionAmt\"\
+          \ in d.columns:\n            d[\"TransactionAmt_log\"]    = np.log1p(d[\"\
+          TransactionAmt\"])\n            d[\"TransactionAmt_cents\"]  = (d[\"TransactionAmt\"\
+          ] * 100 % 100).astype(int)\n            d[\"TransactionAmt_bin\"]    = pd.cut(\n\
+          \                d[\"TransactionAmt\"], bins=[0, 10, 100, 1000, np.inf],\n\
+          \                labels=[0, 1, 2, 3], include_lowest=True\n            ).astype(float)\n\
+          \n        c_cols = [c for c in d.columns if c[0] == \"C\" and c[1:].isdigit()]\n\
+          \        if c_cols:\n            d[\"C_sum\"] = d[c_cols].sum(axis=1)\n\n\
+          \        if \"D1\" in d.columns and \"D2\" in d.columns:\n            d[\"\
+          D1_D2_ratio\"] = (d[\"D1\"] / (d[\"D2\"].replace(0, np.nan))).fillna(0)\n\
+          \n        return d\n\n    for in_art, out_art, name in [\n        (train_data,\
+          \ train_engineered, \"train\"),\n        (val_data,   val_engineered,  \
+          \ \"val\"),\n        (test_data,  test_engineered,  \"test\"),\n    ]:\n\
+          \        src = in_art.path\n        df = pd.read_parquet(src)\n        df_eng\
+          \ = add_features(df)\n        out_path = out_art.path\n        df_eng.to_parquet(out_path,\
+          \ index=False)\n        out_art.metadata[\"rows\"] = len(df_eng)\n     \
+          \   out_art.metadata[\"fraud_rate\"] = df_eng[FRAUD_COL].mean() if FRAUD_COL\
+          \ in df_eng.columns else 0.0\n        print(f\"[feateng] {name}: {df.shape[1]}\
+          \ \u2192 {df_eng.shape[1]} features\")\n\n"
+        image: python:3.9
+    exec-evaluate-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - evaluate_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas==2.1.4'\
+          \ 'pyarrow==15.0.2' 'numpy==1.26.4' 'scikit-learn==1.3.2' 'xgboost==2.0.3'\
+          \ 'lightgbm==4.3.0' 'joblib==1.3.2' 'matplotlib==3.8.2'  &&  python3 -m\
+          \ pip install --quiet --no-warn-script-location 'kfp==2.16.0' '--no-deps'\
+          \ 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\
+          \n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef evaluate_model(\n    test_data: Input[Dataset],\n    model_artifact:\
+          \ Input[Model],\n    eval_metrics: Output[Metrics],\n    plots_artifact:\
+          \ Output[Dataset],   # stores confusion matrix + PR curve PNGs\n    threshold:\
+          \ float = 0.5,\n) -> float:   # returns AUC-ROC so pipeline can branch on\
+          \ it\n    \"\"\"Evaluate trained model: Precision/Recall/F1/AUC-ROC/Confusion\
+          \ Matrix.\"\"\"\n    import pandas as pd\n    import numpy as np\n    import\
+          \ joblib\n    import matplotlib.pyplot as plt\n    import os\n    from sklearn.metrics\
+          \ import (\n        classification_report, roc_auc_score,\n        confusion_matrix,\
+          \ ConfusionMatrixDisplay,\n        average_precision_score, precision_recall_curve,\n\
+          \    )\n\n    FRAUD_COL = \"isFraud\"\n\n    src = test_data.path\n    df\
+          \ = pd.read_parquet(src)\n    X_test = df.drop(columns=[FRAUD_COL]).values.astype(np.float32)\n\
+          \    y_test = df[FRAUD_COL].values\n\n    model_path = model_artifact.path\n\
+          \    payload = joblib.load(model_path)\n\n    # Handle RF-FS hybrid (dict\
+          \ with selector + model)\n    if isinstance(payload, dict) and \"selector\"\
+          \ in payload:\n        X_test = payload[\"selector\"].transform(X_test)\n\
+          \        model = payload[\"model\"]\n    else:\n        model = payload\n\
+          \n    proba = model.predict_proba(X_test)[:, 1]\n    y_pred = (proba >=\
+          \ threshold).astype(int)\n\n    report = classification_report(y_test, y_pred,\
+          \ output_dict=True)\n    auc_roc  = float(roc_auc_score(y_test, proba))\n\
+          \    pr_auc   = float(average_precision_score(y_test, proba))\n    precision\
+          \ = float(report[\"1\"][\"precision\"])\n    recall    = float(report[\"\
+          1\"][\"recall\"])\n    f1        = float(report[\"1\"][\"f1-score\"])\n\
+          \    fpr = float((y_pred[y_test == 0] == 1).sum() / max((y_test == 0).sum(),\
+          \ 1))\n\n    eval_metrics.log_metric(\"auc_roc\",   round(auc_roc, 4))\n\
+          \    eval_metrics.log_metric(\"pr_auc\",    round(pr_auc, 4))\n    eval_metrics.log_metric(\"\
+          precision\", round(precision, 4))\n    eval_metrics.log_metric(\"recall\"\
+          ,    round(recall, 4))\n    eval_metrics.log_metric(\"f1_score\",  round(f1,\
+          \ 4))\n    eval_metrics.log_metric(\"false_positive_rate\", round(fpr, 4))\n\
+          \    eval_metrics.log_metric(\"threshold\", threshold)\n\n    print(f\"\
+          [eval] AUC-ROC={auc_roc:.4f}  Recall={recall:.4f}  Precision={precision:.4f}\
+          \  \"\n          f\"F1={f1:.4f}  PR-AUC={pr_auc:.4f}\")\n\n    # Save plots\n\
+          \    plots_dir = plots_artifact.path\n    os.makedirs(plots_dir, exist_ok=True)\n\
+          \n    # Confusion matrix\n    cm = confusion_matrix(y_test, y_pred)\n  \
+          \  fig, ax = plt.subplots(figsize=(5, 4))\n    ConfusionMatrixDisplay(cm,\
+          \ display_labels=[\"Legit\", \"Fraud\"]).plot(ax=ax, colorbar=False)\n \
+          \   model_name = model_artifact.metadata.get(\"model_type\", \"model\")\n\
+          \    ax.set_title(f\"{model_name.upper()} Confusion Matrix\")\n    plt.tight_layout()\n\
+          \    plt.savefig(os.path.join(plots_dir, \"confusion_matrix.png\"), dpi=150)\n\
+          \    plt.close()\n\n    # PR curve\n    prec_vals, rec_vals, _ = precision_recall_curve(y_test,\
+          \ proba)\n    plt.figure(figsize=(6, 4))\n    plt.plot(rec_vals, prec_vals,\
+          \ label=f\"PR-AUC={pr_auc:.3f}\", color=\"steelblue\")\n    plt.xlabel(\"\
+          Recall\"); plt.ylabel(\"Precision\")\n    plt.title(f\"{model_name.upper()}\
+          \ Precision-Recall Curve\")\n    plt.legend(); plt.grid(alpha=0.3); plt.tight_layout()\n\
+          \    plt.savefig(os.path.join(plots_dir, \"pr_curve.png\"), dpi=150)\n \
+          \   plt.close()\n\n    plots_artifact.metadata[\"auc_roc\"] = auc_roc  \
+          \ # used by downstream deploy condition\n    return auc_roc\n\n"
+        image: python:3.9
+    exec-ingest-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - ingest_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas==2.1.4'\
+          \ 'pyarrow==15.0.2' 'numpy==1.26.4'  &&  python3 -m pip install --quiet\
+          \ --no-warn-script-location 'kfp==2.16.0' '--no-deps' 'typing-extensions>=3.7.4,<5;\
+          \ python_version<\"3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef ingest_data(\n    data_path: str,          # path inside pod\
+          \ (PVC mount), e.g. /data/sample_ieee_70k.parquet\n    output_dataset: Output[Dataset],\n\
+          ):\n    \"\"\"Read IEEE CIS sample from PVC-mounted path and pass as KFP\
+          \ artifact.\"\"\"\n    import pandas as pd\n    import os\n\n    print(f\"\
+          [ingest] Reading from {data_path}\")\n    if not os.path.exists(data_path):\n\
+          \        raise FileNotFoundError(\n            f\"Sample not found at {data_path}.\
+          \ \"\n            \"Ensure the PVC is mounted and build_sample.py was run\
+          \ first.\"\n        )\n\n    df = pd.read_parquet(data_path)\n    print(f\"\
+          [ingest] Shape: {df.shape}  |  fraud rate: {df['isFraud'].mean():.2%}\"\
+          )\n\n    # Write directly to the managed artifact path so downstream tasks\
+          \ can resolve it.\n    df.to_parquet(output_dataset.path, index=False)\n\
+          \    output_dataset.metadata[\"rows\"] = len(df)\n    output_dataset.metadata[\"\
+          fraud_rate\"] = round(float(df[\"isFraud\"].mean()), 4)\n\n    print(f\"\
+          [ingest] Written to artifact: {output_dataset.path}\")\n\n"
+        image: python:3.9
+    exec-preprocess-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - preprocess_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas==2.1.4'\
+          \ 'pyarrow==15.0.2' 'numpy==1.26.4' 'scikit-learn==1.3.2' 'category_encoders==2.6.3'\
+          \ 'joblib==1.3.2'  &&  python3 -m pip install --quiet --no-warn-script-location\
+          \ 'kfp==2.16.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+          3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef preprocess_data(\n    validated_dataset: Input[Dataset],\n  \
+          \  train_data: Output[Dataset],\n    val_data: Output[Dataset],\n    test_data:\
+          \ Output[Dataset],\n    preprocessor_artifact: Output[Dataset],   # saves\
+          \ encoders + medians\n):\n    \"\"\"\n    Full preprocessing:\n      - Missing\
+          \ indicators for >30% null numeric columns\n      - M-columns: T\u21921,\
+          \ F\u21920, NaN\u2192-1\n      - Target encoding (smoothed) for high-cardinality\
+          \ cols\n      - Label encoding for remaining strings\n      - Median imputation\
+          \ for remaining numerics\n      - Chronological 70/15/15 split\n    \"\"\
+          \"\n    import pandas as pd\n    import numpy as np\n    from sklearn.preprocessing\
+          \ import LabelEncoder\n    import joblib\n\n    M_COLS = [f\"M{i}\" for\
+          \ i in range(1, 10)]\n    HIGH_CARD = [\"card1\", \"card2\", \"card5\",\
+          \ \"addr1\", \"P_emaildomain\",\n                 \"R_emaildomain\", \"\
+          DeviceInfo\"]\n    FRAUD_COL = \"isFraud\"\n    DROP_COLS = [\"TransactionID\"\
+          , \"TransactionDT\"]\n    MISSING_THRESH = 0.30\n\n    src = validated_dataset.path\n\
+          \    df = pd.read_parquet(src)\n    df = df.sort_values(\"TransactionDT\"\
+          ).reset_index(drop=True)\n\n    # Chronological split first (prevent leakage)\n\
+          \    n = len(df)\n    val_start  = int(n * 0.70)\n    test_start = int(n\
+          \ * 0.85)\n    train_raw = df.iloc[:val_start]\n    val_raw   = df.iloc[val_start:test_start]\n\
+          \    test_raw  = df.iloc[test_start:]\n\n    def target_encode(train_df,\
+          \ cols, target, smoothing=20.0):\n        global_mean = train_df[target].mean()\n\
+          \        enc = {}\n        for col in cols:\n            if col not in train_df.columns:\n\
+          \                continue\n            stats = train_df.groupby(col)[target].agg([\"\
+          mean\", \"count\"])\n            smoothed = (stats[\"count\"] * stats[\"\
+          mean\"] + smoothing * global_mean) / \\\n                       (stats[\"\
+          count\"] + smoothing)\n            enc[col] = smoothed.to_dict()\n     \
+          \   return enc\n\n    def apply_transforms(data, encoders, medians, fit=False,\
+          \ train_for_enc=None):\n        d = data.copy()\n        drop = [c for c\
+          \ in DROP_COLS if c in d.columns]\n        d = d.drop(columns=drop)\n  \
+          \      y = d.pop(FRAUD_COL) if FRAUD_COL in d.columns else None\n\n    \
+          \    # Missing indicators\n        miss_rates = d.isnull().mean()\n    \
+          \    for col in miss_rates[miss_rates > MISSING_THRESH].index:\n       \
+          \     if pd.api.types.is_numeric_dtype(d[col]):\n                d[f\"{col}_missing\"\
+          ] = d[col].isnull().astype(np.int8)\n\n        # M-columns\n        for\
+          \ col in M_COLS:\n            if col in d.columns:\n                d[col]\
+          \ = d[col].map({\"T\": 1, \"F\": 0}).fillna(-1).astype(np.int8)\n\n    \
+          \    # Target encoding\n        gm = y.mean() if y is not None else 0.05\n\
+          \        for col, mapping in encoders.items():\n            if col in d.columns:\n\
+          \                d[col] = d[col].map(mapping).fillna(gm)\n\n        # Label\
+          \ encode remaining strings\n        for col in d.select_dtypes(include=[\"\
+          object\", \"str\", \"category\"]).columns:\n            le = LabelEncoder()\n\
+          \            d[col] = le.fit_transform(d[col].astype(str))\n\n        #\
+          \ Median imputation\n        for col, val in medians.items():\n        \
+          \    if col in d.columns:\n                d[col] = d[col].fillna(val)\n\
+          \        d = d.fillna(0)\n        return d, y\n\n    # Fit encoders on training\
+          \ set\n    encoders = target_encode(train_raw, HIGH_CARD, FRAUD_COL)\n \
+          \   # Compute medians after dropping non-feature cols\n    tmp = train_raw.drop(columns=[c\
+          \ for c in DROP_COLS if c in train_raw.columns])\n    tmp = tmp.drop(columns=[FRAUD_COL],\
+          \ errors=\"ignore\")\n    for col in M_COLS:\n        if col in tmp.columns:\n\
+          \            tmp[col] = tmp[col].map({\"T\": 1, \"F\": 0}).fillna(-1)\n\
+          \    gm = train_raw[FRAUD_COL].mean()\n    for col, mapping in encoders.items():\n\
+          \        if col in tmp.columns:\n            tmp[col] = tmp[col].map(mapping).fillna(gm)\n\
+          \    medians = tmp.select_dtypes(include=[np.number]).median().to_dict()\n\
+          \n    X_train, y_train = apply_transforms(train_raw, encoders, medians)\n\
+          \    X_val,   y_val   = apply_transforms(val_raw,   encoders, medians)\n\
+          \    X_test,  y_test  = apply_transforms(test_raw,  encoders, medians)\n\
+          \n    # Save splits\n    for split_name, X, y, out_art in [\n        (\"\
+          train\", X_train, y_train, train_data),\n        (\"val\",   X_val,   y_val,\
+          \   val_data),\n        (\"test\",  X_test,  y_test,  test_data),\n    ]:\n\
+          \        out = X.copy(); out[FRAUD_COL] = y.values\n        path = out_art.path\n\
+          \        out.to_parquet(path, index=False)\n        out_art.metadata[\"\
+          rows\"] = len(out)\n        out_art.metadata[\"fraud_rate\"] = round(float(y.mean()),\
+          \ 4)\n        print(f\"[preprocess] {split_name}: {len(out):,} rows  fraud={y.mean():.2%}\
+          \  features={X.shape[1]}\")\n\n    # Save preprocessor\n    prep_path =\
+          \ preprocessor_artifact.path\n    joblib.dump({\"encoders\": encoders, \"\
+          medians\": medians}, prep_path)\n    print(f\"[preprocess] Preprocessor\
+          \ saved \u2192 {prep_path}\")\n\n"
+        image: python:3.9
+        resources:
+          cpuLimit: 2.0
+          cpuRequest: 1.0
+          memoryLimit: 4.0
+          memoryRequest: 2.0
+          resourceCpuLimit: '2'
+          resourceCpuRequest: '1'
+          resourceMemoryLimit: 4G
+          resourceMemoryRequest: 2G
+    exec-skip-deploy:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - _skip_deploy
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef _skip_deploy(auc_roc: float, threshold: float):\n    \"\"\"Placeholder\
+          \ step shown in the DAG when deployment is skipped.\"\"\"\n    print(f\"\
+          [deploy] SKIPPED \u2014 AUC-ROC {auc_roc:.4f} < threshold {threshold:.2f}\"\
+          )\n    print(\"  Retrain with more data or tune hyperparameters to reach\
+          \ the threshold.\")\n\n"
+        image: python:3.9
+    exec-train-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas==2.1.4'\
+          \ 'pyarrow==15.0.2' 'numpy==1.26.4' 'scikit-learn==1.3.2' 'xgboost==2.0.3'\
+          \ 'lightgbm==4.3.0' 'imbalanced-learn==0.12.2' 'joblib==1.3.2'  &&  python3\
+          \ -m pip install --quiet --no-warn-script-location 'kfp==2.16.0' '--no-deps'\
+          \ 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\
+          \n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_model(\n    train_data: Input[Dataset],\n    val_data:\
+          \ Input[Dataset],\n    model_artifact: Output[Model],\n    model_type: str\
+          \ = \"xgb\",               # \"xgb\" | \"lgbm\" | \"rf_fs\"\n    imbalance_strategy:\
+          \ str = \"class_weight\",  # \"class_weight\" | \"smote\"\n    cost_sensitive:\
+          \ bool = False,\n    n_estimators: int = 400,\n    random_state: int = 42,\n\
+          ):\n    \"\"\"Train fraud detection model with configurable type and imbalance\
+          \ strategy.\"\"\"\n    import pandas as pd\n    import numpy as np\n   \
+          \ import joblib\n\n    FRAUD_COL = \"isFraud\"\n\n    def load_split(art):\n\
+          \        src = art.path\n        d = pd.read_parquet(src)\n        X = d.drop(columns=[FRAUD_COL])\n\
+          \        y = d[FRAUD_COL]\n        return X.values.astype(np.float32), y.values.astype(np.int32)\n\
+          \n    X_train, y_train = load_split(train_data)\n    X_val,   y_val   =\
+          \ load_split(val_data)\n    neg, pos = (y_train == 0).sum(), (y_train ==\
+          \ 1).sum()\n    spw = neg / pos\n    print(f\"[train] model={model_type}\
+          \  imbalance={imbalance_strategy}  \"\n          f\"cost_sensitive={cost_sensitive}\
+          \  neg={neg}  pos={pos}  spw={spw:.2f}\")\n\n    # Apply SMOTE before training\
+          \ if requested\n    if imbalance_strategy == \"smote\":\n        from imblearn.over_sampling\
+          \ import SMOTE\n        sm = SMOTE(random_state=random_state, k_neighbors=5)\n\
+          \        X_train, y_train = sm.fit_resample(X_train, y_train)\n        print(f\"\
+          [train] After SMOTE: {len(X_train):,} samples\")\n        effective_spw\
+          \ = 1.0   # SMOTE already balanced\n    else:\n        effective_spw = spw\n\
+          \n    if cost_sensitive:\n        effective_spw = max(effective_spw, 10.0)\n\
+          \n    # \u2500\u2500 XGBoost \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
+          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
+          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
+          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
+          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
+          \u2500\u2500\u2500\u2500\u2500\n    if model_type == \"xgb\":\n        import\
+          \ xgboost as xgb\n        model = xgb.XGBClassifier(\n            n_estimators=n_estimators,\
+          \ max_depth=6, learning_rate=0.05,\n            scale_pos_weight=effective_spw,\
+          \ tree_method=\"hist\",\n            eval_metric=\"logloss\", random_state=random_state,\
+          \ n_jobs=-1\n        )\n        model.fit(X_train, y_train,\n          \
+          \        eval_set=[(X_val, y_val)], verbose=100)\n        payload = model\n\
+          \n    # \u2500\u2500 LightGBM \u2500\u2500\u2500\u2500\u2500\u2500\u2500\
+          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
+          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
+          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
+          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
+          \u2500\u2500\u2500\u2500\u2500\u2500\n    elif model_type == \"lgbm\":\n\
+          \        import lightgbm as lgb\n        model = lgb.LGBMClassifier(\n \
+          \           n_estimators=n_estimators, num_leaves=64, learning_rate=0.05,\n\
+          \            is_unbalance=(imbalance_strategy == \"class_weight\"),\n  \
+          \          objective=\"binary\", metric=\"auc\",\n            random_state=random_state,\
+          \ n_jobs=-1, verbose=-1\n        )\n        cbs = [lgb.early_stopping(50,\
+          \ verbose=False), lgb.log_evaluation(100)]\n        model.fit(X_train, y_train,\
+          \ eval_set=[(X_val, y_val)], callbacks=cbs)\n        payload = model\n\n\
+          \    # \u2500\u2500 Random Forest + Feature Selection (Hybrid) \u2500\u2500\
+          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
+          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
+          \u2500\n    elif model_type == \"rf_fs\":\n        from sklearn.ensemble\
+          \ import RandomForestClassifier\n        from sklearn.feature_selection\
+          \ import SelectFromModel\n        cw = {0: 1, 1: int(max(neg / pos, 5))}\n\
+          \        rf_full = RandomForestClassifier(\n            n_estimators=100,\
+          \ class_weight=cw,\n            random_state=random_state, n_jobs=-1, max_depth=10\n\
+          \        )\n        rf_full.fit(X_train, y_train)\n        selector = SelectFromModel(rf_full,\
+          \ threshold=\"median\", prefit=True)\n        X_tr_sel = selector.transform(X_train)\n\
+          \        selector.transform(X_val)\n        print(f\"[train] RF-FS selected\
+          \ {X_tr_sel.shape[1]}/{X_train.shape[1]} features\")\n\n        rf_final\
+          \ = RandomForestClassifier(\n            n_estimators=n_estimators, class_weight=cw,\n\
+          \            random_state=random_state, n_jobs=-1, max_depth=12\n      \
+          \  )\n        rf_final.fit(X_tr_sel, y_train)\n        payload = {\"selector\"\
+          : selector, \"model\": rf_final}\n    else:\n        raise ValueError(f\"\
+          Unknown model_type: {model_type}\")\n\n    model_path = model_artifact.path\n\
+          \    joblib.dump(payload, model_path)\n    model_artifact.metadata[\"model_type\"\
+          ] = model_type\n    model_artifact.metadata[\"imbalance_strategy\"] = imbalance_strategy\n\
+          \    model_artifact.metadata[\"cost_sensitive\"] = str(cost_sensitive)\n\
+          \    print(f\"[train] Model saved \u2192 {model_path}\")\n\n"
+        image: python:3.9
+        resources:
+          cpuLimit: 4.0
+          cpuRequest: 2.0
+          memoryLimit: 6.0
+          memoryRequest: 3.0
+          resourceCpuLimit: '4'
+          resourceCpuRequest: '2'
+          resourceMemoryLimit: 6G
+          resourceMemoryRequest: 3G
+    exec-validate-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - validate_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas==2.1.4'\
+          \ 'pyarrow==15.0.2' 'numpy==1.26.4'  &&  python3 -m pip install --quiet\
+          \ --no-warn-script-location 'kfp==2.16.0' '--no-deps' 'typing-extensions>=3.7.4,<5;\
+          \ python_version<\"3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef validate_data(\n    input_dataset: Input[Dataset],\n    validated_dataset:\
+          \ Output[Dataset],\n    validation_metrics: Output[Metrics],\n    min_rows:\
+          \ int = 1000,\n    max_missing_ratio: float = 0.99,\n):\n    \"\"\"Validate\
+          \ schema, row count, and missing values. Fail fast on errors.\"\"\"\n  \
+          \  import pandas as pd\n    import shutil\n\n    src = input_dataset.path\n\
+          \    print(f\"[validate] Reading from {src}\")\n    df = pd.read_parquet(src)\n\
+          \n    errors = []\n    REQUIRED = [\"isFraud\", \"TransactionDT\", \"TransactionAmt\"\
+          , \"ProductCD\"]\n    missing_cols = [c for c in REQUIRED if c not in df.columns]\n\
+          \    if missing_cols:\n        errors.append(f\"Missing required columns:\
+          \ {missing_cols}\")\n\n    if len(df) < min_rows:\n        errors.append(f\"\
+          Too few rows: {len(df)} < {min_rows}\")\n\n    high_null = df.columns[df.isnull().mean()\
+          \ > max_missing_ratio].tolist()\n    if high_null:\n        errors.append(f\"\
+          Columns >{max_missing_ratio:.0%} null: {high_null[:5]}\")\n\n    fraud_rate\
+          \ = float(df[\"isFraud\"].mean())\n    overall_missing = float(df.isnull().mean().mean())\n\
+          \n    validation_metrics.log_metric(\"rows\", len(df))\n    validation_metrics.log_metric(\"\
+          columns\", df.shape[1])\n    validation_metrics.log_metric(\"fraud_rate\"\
+          , round(fraud_rate, 4))\n    validation_metrics.log_metric(\"avg_missing_rate\"\
+          , round(overall_missing, 4))\n    validation_metrics.log_metric(\"validation_passed\"\
+          , 1 if not errors else 0)\n\n    if errors:\n        raise ValueError(\"\
+          Validation FAILED:\\n\" + \"\\n\".join(errors))\n\n    print(f\"[validate]\
+          \ PASSED \u2014 rows={len(df):,} fraud={fraud_rate:.2%} missing={overall_missing:.2%}\"\
+          )\n\n    # Pass through to next component\n    out_path = validated_dataset.path\n\
+          \    shutil.copy(src, out_path)\n    validated_dataset.metadata[\"rows\"\
+          ] = len(df)\n\n"
+        image: python:3.9
+pipelineInfo:
+  description: 'IEEE CIS Fraud Detection: 7-step MLOps pipeline with conditional deployment
+    and retry mechanisms.'
+  name: fraud-detection-pipeline
+root:
+  dag:
+    tasks:
+      condition-branches-1:
+        componentRef:
+          name: comp-condition-branches-1
+        dependentTasks:
+        - evaluate-model
+        - preprocess-data
+        - train-model
+        inputs:
+          artifacts:
+            pipelinechannel--preprocess-data-preprocessor_artifact:
+              taskOutputArtifact:
+                outputArtifactKey: preprocessor_artifact
+                producerTask: preprocess-data
+            pipelinechannel--train-model-model_artifact:
+              taskOutputArtifact:
+                outputArtifactKey: model_artifact
+                producerTask: train-model
+          parameters:
+            pipelinechannel--deploy_auc_threshold:
+              componentInputParameter: deploy_auc_threshold
+            pipelinechannel--deploy_path:
+              componentInputParameter: deploy_path
+            pipelinechannel--evaluate-model-Output:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: evaluate-model
+            pipelinechannel--model_version:
+              componentInputParameter: model_version
+        taskInfo:
+          name: condition-branches-1
+      engineer-features:
+        cachingOptions: {}
+        componentRef:
+          name: comp-engineer-features
+        dependentTasks:
+        - preprocess-data
+        inputs:
+          artifacts:
+            test_data:
+              taskOutputArtifact:
+                outputArtifactKey: test_data
+                producerTask: preprocess-data
+            train_data:
+              taskOutputArtifact:
+                outputArtifactKey: train_data
+                producerTask: preprocess-data
+            val_data:
+              taskOutputArtifact:
+                outputArtifactKey: val_data
+                producerTask: preprocess-data
+        taskInfo:
+          name: engineer-features
+      evaluate-model:
+        cachingOptions: {}
+        componentRef:
+          name: comp-evaluate-model
+        dependentTasks:
+        - engineer-features
+        - train-model
+        inputs:
+          artifacts:
+            model_artifact:
+              taskOutputArtifact:
+                outputArtifactKey: model_artifact
+                producerTask: train-model
+            test_data:
+              taskOutputArtifact:
+                outputArtifactKey: test_engineered
+                producerTask: engineer-features
+          parameters:
+            threshold:
+              componentInputParameter: eval_threshold
+        retryPolicy:
+          backoffDuration: 30s
+          backoffFactor: 2.0
+          backoffMaxDuration: 3600s
+          maxRetryCount: 1
+        taskInfo:
+          name: evaluate-model
+      ingest-data:
+        cachingOptions: {}
+        componentRef:
+          name: comp-ingest-data
+        inputs:
+          parameters:
+            data_path:
+              componentInputParameter: data_path
+        taskInfo:
+          name: ingest-data
+      preprocess-data:
+        cachingOptions: {}
+        componentRef:
+          name: comp-preprocess-data
+        dependentTasks:
+        - validate-data
+        inputs:
+          artifacts:
+            validated_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: validated_dataset
+                producerTask: validate-data
+        taskInfo:
+          name: preprocess-data
+      train-model:
+        cachingOptions: {}
+        componentRef:
+          name: comp-train-model
+        dependentTasks:
+        - engineer-features
+        inputs:
+          artifacts:
+            train_data:
+              taskOutputArtifact:
+                outputArtifactKey: train_engineered
+                producerTask: engineer-features
+            val_data:
+              taskOutputArtifact:
+                outputArtifactKey: val_engineered
+                producerTask: engineer-features
+          parameters:
+            cost_sensitive:
+              componentInputParameter: cost_sensitive
+            imbalance_strategy:
+              componentInputParameter: imbalance_strategy
+            model_type:
+              componentInputParameter: model_type
+            n_estimators:
+              componentInputParameter: n_estimators
+            random_state:
+              componentInputParameter: random_state
+        retryPolicy:
+          backoffDuration: 60s
+          backoffFactor: 2.0
+          backoffMaxDuration: 3600s
+          maxRetryCount: 2
+        taskInfo:
+          name: train-model
+      validate-data:
+        cachingOptions: {}
+        componentRef:
+          name: comp-validate-data
+        dependentTasks:
+        - ingest-data
+        inputs:
+          artifacts:
+            input_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: output_dataset
+                producerTask: ingest-data
+        retryPolicy:
+          backoffDuration: 30s
+          backoffFactor: 2.0
+          backoffMaxDuration: 3600s
+          maxRetryCount: 2
+        taskInfo:
+          name: validate-data
+  inputDefinitions:
+    parameters:
+      cost_sensitive:
+        defaultValue: false
+        isOptional: true
+        parameterType: BOOLEAN
+      data_path:
+        defaultValue: /data/processed/sample_ieee_70k.parquet
+        isOptional: true
+        parameterType: STRING
+      deploy_auc_threshold:
+        defaultValue: 0.85
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      deploy_path:
+        defaultValue: /data/models
+        isOptional: true
+        parameterType: STRING
+      eval_threshold:
+        defaultValue: 0.5
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      imbalance_strategy:
+        defaultValue: class_weight
+        isOptional: true
+        parameterType: STRING
+      model_type:
+        defaultValue: xgb
+        isOptional: true
+        parameterType: STRING
+      model_version:
+        defaultValue: v1
+        isOptional: true
+        parameterType: STRING
+      n_estimators:
+        defaultValue: 400.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      random_state:
+        defaultValue: 42.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.16.0

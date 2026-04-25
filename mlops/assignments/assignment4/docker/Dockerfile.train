@@ -1,0 +1,24 @@
+# Training image — used by CI/CD to run pipeline components outside Minikube
+# Build: docker build -f docker/Dockerfile.train -t fraud-train .
+# Run:   docker run --rm -v $(pwd)/data:/data fraud-train python scripts/build_sample.py ...
+
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# System deps for LightGBM and XGBoost
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 gcc g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src/       src/
+COPY scripts/   scripts/
+COPY pipelines/ pipelines/
+
+ENV PYTHONPATH=/app
+
+ENTRYPOINT ["python"]
+CMD ["scripts/build_sample.py", "--help"]
