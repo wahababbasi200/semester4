@@ -31,12 +31,12 @@ def evaluate_model(
 
     FRAUD_COL = "isFraud"
 
-    src = test_data.metadata.get("file", test_data.path + ".parquet")
+    src = test_data.path
     df = pd.read_parquet(src)
     X_test = df.drop(columns=[FRAUD_COL]).values.astype(np.float32)
     y_test = df[FRAUD_COL].values
 
-    model_path = model_artifact.metadata.get("file", model_artifact.path + ".pkl")
+    model_path = model_artifact.path
     payload = joblib.load(model_path)
 
     # Handle RF-FS hybrid (dict with selector + model)
@@ -69,7 +69,7 @@ def evaluate_model(
           f"F1={f1:.4f}  PR-AUC={pr_auc:.4f}")
 
     # Save plots
-    plots_dir = plots_artifact.path + "_plots"
+    plots_dir = plots_artifact.path
     os.makedirs(plots_dir, exist_ok=True)
 
     # Confusion matrix
@@ -92,6 +92,5 @@ def evaluate_model(
     plt.savefig(os.path.join(plots_dir, "pr_curve.png"), dpi=150)
     plt.close()
 
-    plots_artifact.metadata["plots_dir"] = plots_dir
     plots_artifact.metadata["auc_roc"] = auc_roc   # used by downstream deploy condition
     return auc_roc

@@ -13,12 +13,11 @@ Environment variables:
 """
 import time
 import os
-import json
 from contextlib import asynccontextmanager
 from typing import List, Dict, Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import Response, JSONResponse
+from fastapi.responses import Response
 from pydantic import BaseModel
 import pandas as pd
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST

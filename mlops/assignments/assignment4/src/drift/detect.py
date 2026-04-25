@@ -55,7 +55,7 @@ def compute_drift(train_df: pd.DataFrame, future_df: pd.DataFrame,
     df_drift = pd.DataFrame(rows).sort_values("psi", ascending=False)
     df_drift.to_csv(os.path.join(out_dir, "drift_metrics.csv"), index=False)
 
-    print(f"\n[drift] Top drifted features (PSI):")
+    print("\n[drift] Top drifted features (PSI):")
     print(df_drift[["feature", "psi", "ks_stat", "drift_level"]].head(10).to_string(index=False))
 
     # PSI bar plot

@@ -1,5 +1,4 @@
 """Smoke tests for model training and evaluation."""
-import pytest
 import numpy as np
 import sys
 import os
@@ -18,7 +17,7 @@ def test_xgb_trains_and_returns_probabilities():
     import xgboost as xgb
     X, y = _make_arrays()
     X_tr, y_tr = X[:300], y[:300]
-    X_te, y_te = X[300:], y[300:]
+    X_te, _y_te = X[300:], y[300:]
 
     model = xgb.XGBClassifier(
         n_estimators=20, max_depth=3, tree_method="hist",

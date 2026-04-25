@@ -7,7 +7,6 @@ Data validation checks:
 Exits non-zero on failure (CI can catch it).
 """
 import sys
-import os
 import pandas as pd
 import argparse
 

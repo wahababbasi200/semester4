@@ -28,7 +28,7 @@ def train_model(
     FRAUD_COL = "isFraud"
 
     def load_split(art):
-        src = art.metadata.get("file", art.path + ".parquet")
+        src = art.path
         d = pd.read_parquet(src)
         X = d.drop(columns=[FRAUD_COL])
         y = d[FRAUD_COL]
@@ -91,7 +91,7 @@ def train_model(
         rf_full.fit(X_train, y_train)
         selector = SelectFromModel(rf_full, threshold="median", prefit=True)
         X_tr_sel = selector.transform(X_train)
-        X_vl_sel = selector.transform(X_val)
+        selector.transform(X_val)
         print(f"[train] RF-FS selected {X_tr_sel.shape[1]}/{X_train.shape[1]} features")
 
         rf_final = RandomForestClassifier(
@@ -103,9 +103,8 @@ def train_model(
     else:
         raise ValueError(f"Unknown model_type: {model_type}")
 
-    model_path = model_artifact.path + ".pkl"
+    model_path = model_artifact.path
     joblib.dump(payload, model_path)
-    model_artifact.metadata["file"] = model_path
     model_artifact.metadata["model_type"] = model_type
     model_artifact.metadata["imbalance_strategy"] = imbalance_strategy
     model_artifact.metadata["cost_sensitive"] = str(cost_sensitive)

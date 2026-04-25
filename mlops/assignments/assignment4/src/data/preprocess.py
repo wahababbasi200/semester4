@@ -10,7 +10,6 @@ IEEE CIS preprocessing pipeline:
 """
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import joblib
 import os
@@ -80,7 +79,7 @@ def preprocess(df: pd.DataFrame, encoders: dict = None,
             df[col] = df[col].map(mapping).fillna(global_fraud_mean)
 
     # Label-encode remaining string / object columns
-    for col in df.select_dtypes(include=["object", "category"]).columns:
+    for col in df.select_dtypes(include=["object", "str", "category"]).columns:
         le = LabelEncoder()
         df[col] = le.fit_transform(df[col].astype(str))
 

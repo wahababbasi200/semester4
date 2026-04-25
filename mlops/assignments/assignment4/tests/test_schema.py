@@ -1,5 +1,4 @@
 """Tests for data schema validation (runs in CI)."""
-import pytest
 import pandas as pd
 import numpy as np
 import sys

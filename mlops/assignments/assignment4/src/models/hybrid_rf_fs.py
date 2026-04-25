@@ -4,7 +4,6 @@ Step 1: Train RF to get feature importances.
 Step 2: SelectFromModel prunes to top features.
 Step 3: Retrain RF on pruned feature set.
 """
-import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectFromModel
 from sklearn.metrics import (roc_auc_score, classification_report,

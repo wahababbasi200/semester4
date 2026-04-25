@@ -1,6 +1,4 @@
 """XGBoost fraud detection model — standard and cost-sensitive variants."""
-import numpy as np
-import pandas as pd
 import xgboost as xgb
 from sklearn.metrics import (roc_auc_score, classification_report,
                              confusion_matrix, average_precision_score,

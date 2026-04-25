@@ -24,11 +24,9 @@ def ingest_data(
     df = pd.read_parquet(data_path)
     print(f"[ingest] Shape: {df.shape}  |  fraud rate: {df['isFraud'].mean():.2%}")
 
-    # Write to KFP artifact path (CSV for universal downstream compatibility)
-    df.to_parquet(output_dataset.path + ".parquet", index=False)
-    # KFP Dataset artifact path has no extension — save path in metadata
+    # Write directly to the managed artifact path so downstream tasks can resolve it.
+    df.to_parquet(output_dataset.path, index=False)
     output_dataset.metadata["rows"] = len(df)
     output_dataset.metadata["fraud_rate"] = round(float(df["isFraud"].mean()), 4)
-    output_dataset.metadata["file"] = output_dataset.path + ".parquet"
 
-    print(f"[ingest] Written to artifact: {output_dataset.path}.parquet")
+    print(f"[ingest] Written to artifact: {output_dataset.path}")

@@ -37,7 +37,7 @@ def preprocess_data(
     DROP_COLS = ["TransactionID", "TransactionDT"]
     MISSING_THRESH = 0.30
 
-    src = validated_dataset.metadata.get("file", validated_dataset.path + ".parquet")
+    src = validated_dataset.path
     df = pd.read_parquet(src)
     df = df.sort_values("TransactionDT").reset_index(drop=True)
 
@@ -69,9 +69,13 @@ def preprocess_data(
 
         # Missing indicators
         miss_rates = d.isnull().mean()
-        for col in miss_rates[miss_rates > MISSING_THRESH].index:
-            if pd.api.types.is_numeric_dtype(d[col]):
-                d[f"{col}_missing"] = d[col].isnull().astype(np.int8)
+        missing_indicators = {
+            f"{col}_missing": d[col].isnull().astype(np.int8)
+            for col in miss_rates[miss_rates > MISSING_THRESH].index
+            if pd.api.types.is_numeric_dtype(d[col])
+        }
+        if missing_indicators:
+            d = pd.concat([d, pd.DataFrame(missing_indicators, index=d.index)], axis=1)
 
         # M-columns
         for col in M_COLS:
@@ -85,7 +89,15 @@ def preprocess_data(
                 d[col] = d[col].map(mapping).fillna(gm)
 
         # Label encode remaining strings
-        for col in d.select_dtypes(include=["object", "category"]).columns:
+        string_like_cols = [
+            col for col in d.columns
+            if (
+                pd.api.types.is_object_dtype(d[col])
+                or pd.api.types.is_string_dtype(d[col])
+                or pd.api.types.is_categorical_dtype(d[col])
+            )
+        ]
+        for col in string_like_cols:
             le = LabelEncoder()
             d[col] = le.fit_transform(d[col].astype(str))
 
@@ -109,27 +121,23 @@ def preprocess_data(
         if col in tmp.columns:
             tmp[col] = tmp[col].map(mapping).fillna(gm)
     medians = tmp.select_dtypes(include=[np.number]).median().to_dict()
+    del tmp
 
-    X_train, y_train = apply_transforms(train_raw, encoders, medians)
-    X_val,   y_val   = apply_transforms(val_raw,   encoders, medians)
-    X_test,  y_test  = apply_transforms(test_raw,  encoders, medians)
-
-    # Save splits
-    for split_name, X, y, out_art in [
-        ("train", X_train, y_train, train_data),
-        ("val",   X_val,   y_val,   val_data),
-        ("test",  X_test,  y_test,  test_data),
-    ]:
-        out = X.copy(); out[FRAUD_COL] = y.values
-        path = out_art.path + ".parquet"
-        out.to_parquet(path, index=False)
-        out_art.metadata["file"] = path
-        out_art.metadata["rows"] = len(out)
+    def write_split(split_name, raw_df, out_art):
+        X, y = apply_transforms(raw_df, encoders, medians)
+        X[FRAUD_COL] = y.to_numpy()
+        path = out_art.path
+        X.to_parquet(path, index=False)
+        out_art.metadata["rows"] = len(X)
         out_art.metadata["fraud_rate"] = round(float(y.mean()), 4)
-        print(f"[preprocess] {split_name}: {len(out):,} rows  fraud={y.mean():.2%}  features={X.shape[1]}")
+        print(f"[preprocess] {split_name}: {len(X):,} rows  fraud={y.mean():.2%}  features={X.shape[1] - 1}")
+
+    # Transform and write one split at a time to keep peak memory low.
+    write_split("train", train_raw, train_data)
+    write_split("val", val_raw, val_data)
+    write_split("test", test_raw, test_data)
 
     # Save preprocessor
-    prep_path = preprocessor_artifact.path + ".pkl"
+    prep_path = preprocessor_artifact.path
     joblib.dump({"encoders": encoders, "medians": medians}, prep_path)
-    preprocessor_artifact.metadata["file"] = prep_path
     print(f"[preprocess] Preprocessor saved → {prep_path}")

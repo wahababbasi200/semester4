@@ -13,7 +13,7 @@ def quartile_split(df: pd.DataFrame, time_col: str = "TransactionDT"):
     """Return (q12_train, q3_val, q4_future) DataFrames in time order."""
     df = df.sort_values(time_col).reset_index(drop=True)
     n = len(df)
-    q1_end = n // 4
+    n // 4
     q2_end = n // 2
     q3_end = 3 * n // 4
 

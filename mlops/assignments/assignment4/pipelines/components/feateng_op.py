@@ -44,12 +44,11 @@ def engineer_features(
         (val_data,   val_engineered,   "val"),
         (test_data,  test_engineered,  "test"),
     ]:
-        src = in_art.metadata.get("file", in_art.path + ".parquet")
+        src = in_art.path
         df = pd.read_parquet(src)
         df_eng = add_features(df)
-        out_path = out_art.path + ".parquet"
+        out_path = out_art.path
         df_eng.to_parquet(out_path, index=False)
-        out_art.metadata["file"] = out_path
         out_art.metadata["rows"] = len(df_eng)
         out_art.metadata["fraud_rate"] = df_eng[FRAUD_COL].mean() if FRAUD_COL in df_eng.columns else 0.0
         print(f"[feateng] {name}: {df.shape[1]} → {df_eng.shape[1]} features")

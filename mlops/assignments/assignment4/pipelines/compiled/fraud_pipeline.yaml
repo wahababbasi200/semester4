@@ -1,6 +1,6 @@
 # PIPELINE DEFINITION
 # Name: fraud-detection-pipeline
-# Description: IEEE CIS Fraud Detection: 7-step MLOps pipeline with conditional deployment and retry mechanisms.
+# Description: IEEE CIS Fraud Detection: 7-step MLOps pipeline with AUC-gated deployment and retry mechanisms.
 # Inputs:
 #    cost_sensitive: bool [Default: False]
 #    data_path: str [Default: '/data/processed/sample_ieee_70k.parquet']
@@ -13,130 +13,6 @@
 #    n_estimators: int [Default: 400.0]
 #    random_state: int [Default: 42.0]
 components:
-  comp-condition-2:
-    dag:
-      tasks:
-        deploy-model:
-          cachingOptions: {}
-          componentRef:
-            name: comp-deploy-model
-          inputs:
-            artifacts:
-              model_artifact:
-                componentInputArtifact: pipelinechannel--train-model-model_artifact
-              preprocessor_artifact:
-                componentInputArtifact: pipelinechannel--preprocess-data-preprocessor_artifact
-            parameters:
-              deploy_path:
-                componentInputParameter: pipelinechannel--deploy_path
-              model_version:
-                componentInputParameter: pipelinechannel--model_version
-          retryPolicy:
-            backoffDuration: 30s
-            backoffFactor: 2.0
-            backoffMaxDuration: 3600s
-            maxRetryCount: 2
-          taskInfo:
-            name: deploy-model
-    inputDefinitions:
-      artifacts:
-        pipelinechannel--preprocess-data-preprocessor_artifact:
-          artifactType:
-            schemaTitle: system.Dataset
-            schemaVersion: 0.0.1
-        pipelinechannel--train-model-model_artifact:
-          artifactType:
-            schemaTitle: system.Model
-            schemaVersion: 0.0.1
-      parameters:
-        pipelinechannel--deploy_auc_threshold:
-          parameterType: NUMBER_DOUBLE
-        pipelinechannel--deploy_path:
-          parameterType: STRING
-        pipelinechannel--evaluate-model-Output:
-          parameterType: NUMBER_DOUBLE
-        pipelinechannel--model_version:
-          parameterType: STRING
-  comp-condition-3:
-    dag:
-      tasks:
-        skip-deploy:
-          cachingOptions: {}
-          componentRef:
-            name: comp-skip-deploy
-          inputs:
-            parameters:
-              auc_roc:
-                componentInputParameter: pipelinechannel--evaluate-model-Output
-              threshold:
-                componentInputParameter: pipelinechannel--deploy_auc_threshold
-          taskInfo:
-            name: skip-deploy
-    inputDefinitions:
-      parameters:
-        pipelinechannel--deploy_auc_threshold:
-          parameterType: NUMBER_DOUBLE
-        pipelinechannel--evaluate-model-Output:
-          parameterType: NUMBER_DOUBLE
-  comp-condition-branches-1:
-    dag:
-      tasks:
-        condition-2:
-          componentRef:
-            name: comp-condition-2
-          inputs:
-            artifacts:
-              pipelinechannel--preprocess-data-preprocessor_artifact:
-                componentInputArtifact: pipelinechannel--preprocess-data-preprocessor_artifact
-              pipelinechannel--train-model-model_artifact:
-                componentInputArtifact: pipelinechannel--train-model-model_artifact
-            parameters:
-              pipelinechannel--deploy_auc_threshold:
-                componentInputParameter: pipelinechannel--deploy_auc_threshold
-              pipelinechannel--deploy_path:
-                componentInputParameter: pipelinechannel--deploy_path
-              pipelinechannel--evaluate-model-Output:
-                componentInputParameter: pipelinechannel--evaluate-model-Output
-              pipelinechannel--model_version:
-                componentInputParameter: pipelinechannel--model_version
-          taskInfo:
-            name: "AUC above threshold \u2014 deploy"
-          triggerPolicy:
-            condition: inputs.parameter_values['pipelinechannel--evaluate-model-Output']
-              >= inputs.parameter_values['pipelinechannel--deploy_auc_threshold']
-        condition-3:
-          componentRef:
-            name: comp-condition-3
-          inputs:
-            parameters:
-              pipelinechannel--deploy_auc_threshold:
-                componentInputParameter: pipelinechannel--deploy_auc_threshold
-              pipelinechannel--evaluate-model-Output:
-                componentInputParameter: pipelinechannel--evaluate-model-Output
-          taskInfo:
-            name: "AUC below threshold \u2014 skip deploy"
-          triggerPolicy:
-            condition: '!(inputs.parameter_values[''pipelinechannel--evaluate-model-Output'']
-              >= inputs.parameter_values[''pipelinechannel--deploy_auc_threshold''])'
-    inputDefinitions:
-      artifacts:
-        pipelinechannel--preprocess-data-preprocessor_artifact:
-          artifactType:
-            schemaTitle: system.Dataset
-            schemaVersion: 0.0.1
-        pipelinechannel--train-model-model_artifact:
-          artifactType:
-            schemaTitle: system.Model
-            schemaVersion: 0.0.1
-      parameters:
-        pipelinechannel--deploy_auc_threshold:
-          parameterType: NUMBER_DOUBLE
-        pipelinechannel--deploy_path:
-          parameterType: STRING
-        pipelinechannel--evaluate-model-Output:
-          parameterType: NUMBER_DOUBLE
-        pipelinechannel--model_version:
-          parameterType: STRING
   comp-deploy-model:
     executorLabel: exec-deploy-model
     inputDefinitions:
@@ -150,10 +26,16 @@ components:
             schemaTitle: system.Dataset
             schemaVersion: 0.0.1
       parameters:
+        auc_roc:
+          parameterType: NUMBER_DOUBLE
         deploy_path:
           defaultValue: /data/models
           isOptional: true
           parameterType: STRING
+        deploy_threshold:
+          defaultValue: 0.85
+          isOptional: true
+          parameterType: NUMBER_DOUBLE
         model_version:
           defaultValue: v1
           isOptional: true
@@ -256,14 +138,6 @@ components:
           artifactType:
             schemaTitle: system.Dataset
             schemaVersion: 0.0.1
-  comp-skip-deploy:
-    executorLabel: exec-skip-deploy
-    inputDefinitions:
-      parameters:
-        auc_roc:
-          parameterType: NUMBER_DOUBLE
-        threshold:
-          parameterType: NUMBER_DOUBLE
   comp-train-model:
     executorLabel: exec-train-model
     inputDefinitions:
@@ -360,26 +234,33 @@ deploymentSpec:
           '
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
           \ *\n\ndef deploy_model(\n    model_artifact: Input[Model],\n    preprocessor_artifact:\
-          \ Input[Dataset],\n    deploy_path: str = \"/data/models\",    # PVC-mounted\
-          \ serving path\n    model_version: str = \"v1\",\n):\n    \"\"\"\n    Copy\
-          \ the trained model and preprocessor to the serving path.\n    In production\
-          \ this would trigger a Kubernetes rolling-update;\n    here we write to\
-          \ the shared PVC so the FastAPI pod picks it up.\n    \"\"\"\n    import\
-          \ shutil\n    import os\n    import json\n\n    os.makedirs(deploy_path,\
-          \ exist_ok=True)\n\n    model_src = model_artifact.path\n    prep_src  =\
-          \ preprocessor_artifact.path\n\n    model_dst = os.path.join(deploy_path,\
-          \ \"best_model.pkl\")\n    prep_dst  = os.path.join(deploy_path, \"preprocessor.pkl\"\
-          )\n\n    shutil.copy(model_src, model_dst)\n    shutil.copy(prep_src,  prep_dst)\n\
-          \n    # Write version manifest\n    meta = {\n        \"version\":     \
-          \     model_version,\n        \"model_type\":       model_artifact.metadata.get(\"\
-          model_type\", \"unknown\"),\n        \"imbalance\":        model_artifact.metadata.get(\"\
+          \ Input[Dataset],\n    auc_roc: float,\n    deploy_threshold: float = 0.85,\n\
+          \    deploy_path: str = \"/data/models\",    # PVC-mounted serving path\n\
+          \    model_version: str = \"v1\",\n):\n    \"\"\"\n    Copy the trained\
+          \ model and preprocessor to the serving path when the\n    evaluation metric\
+          \ passes the deployment threshold.\n\n    This keeps deployment gating inside\
+          \ a single executor component because the\n    Kubeflow runtime used for\
+          \ this assignment cannot resolve artifact inputs\n    passed through nested\
+          \ conditional DAG branches.\n    \"\"\"\n    import shutil\n    import os\n\
+          \    import json\n\n    if auc_roc < deploy_threshold:\n        print(f\"\
+          [deploy] SKIPPED - AUC-ROC {auc_roc:.4f} < threshold {deploy_threshold:.2f}\"\
+          )\n        return\n\n    os.makedirs(deploy_path, exist_ok=True)\n\n   \
+          \ model_src = model_artifact.path\n    prep_src  = preprocessor_artifact.path\n\
+          \n    model_dst = os.path.join(deploy_path, \"best_model.pkl\")\n    prep_dst\
+          \  = os.path.join(deploy_path, \"preprocessor.pkl\")\n\n    shutil.copy(model_src,\
+          \ model_dst)\n    shutil.copy(prep_src,  prep_dst)\n\n    # Write version\
+          \ manifest\n    meta = {\n        \"version\":          model_version,\n\
+          \        \"model_type\":       model_artifact.metadata.get(\"model_type\"\
+          , \"unknown\"),\n        \"imbalance\":        model_artifact.metadata.get(\"\
           imbalance_strategy\", \"unknown\"),\n        \"cost_sensitive\":   model_artifact.metadata.get(\"\
           cost_sensitive\", \"false\"),\n    }\n    with open(os.path.join(deploy_path,\
           \ \"model_meta.json\"), \"w\") as f:\n        json.dump(meta, f, indent=2)\n\
-          \n    print(f\"[deploy] Model deployed to {deploy_path}\")\n    print(f\"\
-          \  model:        {model_dst}\")\n    print(f\"  preprocessor: {prep_dst}\"\
-          )\n    print(f\"  meta:         {meta}\")\n    print(\"[deploy] FastAPI\
-          \ service will pick up new model on next request (lazy reload).\")\n\n"
+          \n    print(f\"[deploy] PASSED threshold {deploy_threshold:.2f} with AUC-ROC\
+          \ {auc_roc:.4f}\")\n    print(f\"[deploy] Model deployed to {deploy_path}\"\
+          )\n    print(f\"  model:        {model_dst}\")\n    print(f\"  preprocessor:\
+          \ {prep_dst}\")\n    print(f\"  meta:         {meta}\")\n    print(\"[deploy]\
+          \ FastAPI service will pick up new model on next request (lazy reload).\"\
+          )\n\n"
         image: python:3.9
     exec-engineer-features:
       container:
@@ -610,16 +491,21 @@ deploymentSpec:
           \ in DROP_COLS if c in d.columns]\n        d = d.drop(columns=drop)\n  \
           \      y = d.pop(FRAUD_COL) if FRAUD_COL in d.columns else None\n\n    \
           \    # Missing indicators\n        miss_rates = d.isnull().mean()\n    \
-          \    for col in miss_rates[miss_rates > MISSING_THRESH].index:\n       \
-          \     if pd.api.types.is_numeric_dtype(d[col]):\n                d[f\"{col}_missing\"\
-          ] = d[col].isnull().astype(np.int8)\n\n        # M-columns\n        for\
-          \ col in M_COLS:\n            if col in d.columns:\n                d[col]\
-          \ = d[col].map({\"T\": 1, \"F\": 0}).fillna(-1).astype(np.int8)\n\n    \
-          \    # Target encoding\n        gm = y.mean() if y is not None else 0.05\n\
-          \        for col, mapping in encoders.items():\n            if col in d.columns:\n\
-          \                d[col] = d[col].map(mapping).fillna(gm)\n\n        # Label\
-          \ encode remaining strings\n        for col in d.select_dtypes(include=[\"\
-          object\", \"str\", \"category\"]).columns:\n            le = LabelEncoder()\n\
+          \    missing_indicators = {\n            f\"{col}_missing\": d[col].isnull().astype(np.int8)\n\
+          \            for col in miss_rates[miss_rates > MISSING_THRESH].index\n\
+          \            if pd.api.types.is_numeric_dtype(d[col])\n        }\n     \
+          \   if missing_indicators:\n            d = pd.concat([d, pd.DataFrame(missing_indicators,\
+          \ index=d.index)], axis=1)\n\n        # M-columns\n        for col in M_COLS:\n\
+          \            if col in d.columns:\n                d[col] = d[col].map({\"\
+          T\": 1, \"F\": 0}).fillna(-1).astype(np.int8)\n\n        # Target encoding\n\
+          \        gm = y.mean() if y is not None else 0.05\n        for col, mapping\
+          \ in encoders.items():\n            if col in d.columns:\n             \
+          \   d[col] = d[col].map(mapping).fillna(gm)\n\n        # Label encode remaining\
+          \ strings\n        string_like_cols = [\n            col for col in d.columns\n\
+          \            if (\n                pd.api.types.is_object_dtype(d[col])\n\
+          \                or pd.api.types.is_string_dtype(d[col])\n             \
+          \   or pd.api.types.is_categorical_dtype(d[col])\n            )\n      \
+          \  ]\n        for col in string_like_cols:\n            le = LabelEncoder()\n\
           \            d[col] = le.fit_transform(d[col].astype(str))\n\n        #\
           \ Median imputation\n        for col, val in medians.items():\n        \
           \    if col in d.columns:\n                d[col] = d[col].fillna(val)\n\
@@ -632,62 +518,28 @@ deploymentSpec:
           \    gm = train_raw[FRAUD_COL].mean()\n    for col, mapping in encoders.items():\n\
           \        if col in tmp.columns:\n            tmp[col] = tmp[col].map(mapping).fillna(gm)\n\
           \    medians = tmp.select_dtypes(include=[np.number]).median().to_dict()\n\
-          \n    X_train, y_train = apply_transforms(train_raw, encoders, medians)\n\
-          \    X_val,   y_val   = apply_transforms(val_raw,   encoders, medians)\n\
-          \    X_test,  y_test  = apply_transforms(test_raw,  encoders, medians)\n\
-          \n    # Save splits\n    for split_name, X, y, out_art in [\n        (\"\
-          train\", X_train, y_train, train_data),\n        (\"val\",   X_val,   y_val,\
-          \   val_data),\n        (\"test\",  X_test,  y_test,  test_data),\n    ]:\n\
-          \        out = X.copy(); out[FRAUD_COL] = y.values\n        path = out_art.path\n\
-          \        out.to_parquet(path, index=False)\n        out_art.metadata[\"\
-          rows\"] = len(out)\n        out_art.metadata[\"fraud_rate\"] = round(float(y.mean()),\
-          \ 4)\n        print(f\"[preprocess] {split_name}: {len(out):,} rows  fraud={y.mean():.2%}\
-          \  features={X.shape[1]}\")\n\n    # Save preprocessor\n    prep_path =\
-          \ preprocessor_artifact.path\n    joblib.dump({\"encoders\": encoders, \"\
-          medians\": medians}, prep_path)\n    print(f\"[preprocess] Preprocessor\
-          \ saved \u2192 {prep_path}\")\n\n"
+          \    del tmp\n\n    def write_split(split_name, raw_df, out_art):\n    \
+          \    X, y = apply_transforms(raw_df, encoders, medians)\n        X[FRAUD_COL]\
+          \ = y.to_numpy()\n        path = out_art.path\n        X.to_parquet(path,\
+          \ index=False)\n        out_art.metadata[\"rows\"] = len(X)\n        out_art.metadata[\"\
+          fraud_rate\"] = round(float(y.mean()), 4)\n        print(f\"[preprocess]\
+          \ {split_name}: {len(X):,} rows  fraud={y.mean():.2%}  features={X.shape[1]\
+          \ - 1}\")\n\n    # Transform and write one split at a time to keep peak\
+          \ memory low.\n    write_split(\"train\", train_raw, train_data)\n    write_split(\"\
+          val\", val_raw, val_data)\n    write_split(\"test\", test_raw, test_data)\n\
+          \n    # Save preprocessor\n    prep_path = preprocessor_artifact.path\n\
+          \    joblib.dump({\"encoders\": encoders, \"medians\": medians}, prep_path)\n\
+          \    print(f\"[preprocess] Preprocessor saved \u2192 {prep_path}\")\n\n"
         image: python:3.9
         resources:
-          cpuLimit: 2.0
-          cpuRequest: 1.0
-          memoryLimit: 4.0
-          memoryRequest: 2.0
-          resourceCpuLimit: '2'
-          resourceCpuRequest: '1'
-          resourceMemoryLimit: 4G
-          resourceMemoryRequest: 2G
-    exec-skip-deploy:
-      container:
-        args:
-        - --executor_input
-        - '{{$}}'
-        - --function_to_execute
-        - _skip_deploy
-        command:
-        - sh
-        - -c
-        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
-          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
-          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.0'\
-          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
-          $0\" \"$@\"\n"
-        - sh
-        - -ec
-        - 'program_path=$(mktemp -d)
-
-
-          printf "%s" "$0" > "$program_path/ephemeral_component.py"
-
-          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
-
-          '
-        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
-          \ *\n\ndef _skip_deploy(auc_roc: float, threshold: float):\n    \"\"\"Placeholder\
-          \ step shown in the DAG when deployment is skipped.\"\"\"\n    print(f\"\
-          [deploy] SKIPPED \u2014 AUC-ROC {auc_roc:.4f} < threshold {threshold:.2f}\"\
-          )\n    print(\"  Retrain with more data or tune hyperparameters to reach\
-          \ the threshold.\")\n\n"
-        image: python:3.9
+          cpuLimit: 1.0
+          cpuRequest: 0.25
+          memoryLimit: 2.0
+          memoryRequest: 1.0
+          resourceCpuLimit: '1'
+          resourceCpuRequest: 250m
+          resourceMemoryLimit: 2G
+          resourceMemoryRequest: 1G
     exec-train-model:
       container:
         args:
@@ -785,14 +637,14 @@ deploymentSpec:
           \    print(f\"[train] Model saved \u2192 {model_path}\")\n\n"
         image: python:3.9
         resources:
-          cpuLimit: 4.0
-          cpuRequest: 2.0
-          memoryLimit: 6.0
-          memoryRequest: 3.0
-          resourceCpuLimit: '4'
-          resourceCpuRequest: '2'
-          resourceMemoryLimit: 6G
-          resourceMemoryRequest: 3G
+          cpuLimit: 2.0
+          cpuRequest: 0.5
+          memoryLimit: 4.0
+          memoryRequest: 2.0
+          resourceCpuLimit: '2'
+          resourceCpuRequest: 500m
+          resourceMemoryLimit: 4G
+          resourceMemoryRequest: 2G
     exec-validate-data:
       container:
         args:
@@ -846,42 +698,48 @@ deploymentSpec:
           ] = len(df)\n\n"
         image: python:3.9
 pipelineInfo:
-  description: 'IEEE CIS Fraud Detection: 7-step MLOps pipeline with conditional deployment
+  description: 'IEEE CIS Fraud Detection: 7-step MLOps pipeline with AUC-gated deployment
     and retry mechanisms.'
   name: fraud-detection-pipeline
 root:
   dag:
     tasks:
-      condition-branches-1:
+      deploy-model:
+        cachingOptions: {}
         componentRef:
-          name: comp-condition-branches-1
+          name: comp-deploy-model
         dependentTasks:
         - evaluate-model
         - preprocess-data
         - train-model
         inputs:
           artifacts:
-            pipelinechannel--preprocess-data-preprocessor_artifact:
-              taskOutputArtifact:
-                outputArtifactKey: preprocessor_artifact
-                producerTask: preprocess-data
-            pipelinechannel--train-model-model_artifact:
+            model_artifact:
               taskOutputArtifact:
                 outputArtifactKey: model_artifact
                 producerTask: train-model
+            preprocessor_artifact:
+              taskOutputArtifact:
+                outputArtifactKey: preprocessor_artifact
+                producerTask: preprocess-data
           parameters:
-            pipelinechannel--deploy_auc_threshold:
-              componentInputParameter: deploy_auc_threshold
-            pipelinechannel--deploy_path:
-              componentInputParameter: deploy_path
-            pipelinechannel--evaluate-model-Output:
+            auc_roc:
               taskOutputParameter:
                 outputParameterKey: Output
                 producerTask: evaluate-model
-            pipelinechannel--model_version:
+            deploy_path:
+              componentInputParameter: deploy_path
+            deploy_threshold:
+              componentInputParameter: deploy_auc_threshold
+            model_version:
               componentInputParameter: model_version
+        retryPolicy:
+          backoffDuration: 30s
+          backoffFactor: 2.0
+          backoffMaxDuration: 3600s
+          maxRetryCount: 2
         taskInfo:
-          name: condition-branches-1
+          name: deploy-model
       engineer-features:
         cachingOptions: {}
         componentRef:

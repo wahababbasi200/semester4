@@ -1,7 +1,6 @@
 """Load trained model + preprocessor from disk."""
 import os
 import joblib
-import numpy as np
 import pandas as pd
 
 _model = None

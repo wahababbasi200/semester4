@@ -1,5 +1,4 @@
 """LightGBM fraud detection model."""
-import numpy as np
 import lightgbm as lgb
 from sklearn.metrics import (roc_auc_score, classification_report,
                              confusion_matrix, average_precision_score,

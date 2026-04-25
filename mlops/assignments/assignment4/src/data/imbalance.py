@@ -10,7 +10,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.metrics import (classification_report, roc_auc_score,
                              confusion_matrix, ConfusionMatrixDisplay,
-                             precision_recall_curve, average_precision_score)
+                             average_precision_score)
 import xgboost as xgb
 import os
 
@@ -94,8 +94,7 @@ if __name__ == "__main__":
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
     from src.data.ingest import load_sample
-    from src.data.preprocess import fit_and_save, preprocess, time_aware_split
-    import joblib
+    from src.data.preprocess import preprocess, time_aware_split
 
     df = load_sample()
     train_raw, _, test_raw = time_aware_split(df)

@@ -16,9 +16,8 @@ def validate_data(
     """Validate schema, row count, and missing values. Fail fast on errors."""
     import pandas as pd
     import shutil
-    import os
 
-    src = input_dataset.metadata.get("file", input_dataset.path + ".parquet")
+    src = input_dataset.path
     print(f"[validate] Reading from {src}")
     df = pd.read_parquet(src)
 
@@ -45,12 +44,11 @@ def validate_data(
     validation_metrics.log_metric("validation_passed", 1 if not errors else 0)
 
     if errors:
-        raise ValueError(f"Validation FAILED:\n" + "\n".join(errors))
+        raise ValueError("Validation FAILED:\n" + "\n".join(errors))
 
     print(f"[validate] PASSED — rows={len(df):,} fraud={fraud_rate:.2%} missing={overall_missing:.2%}")
 
     # Pass through to next component
-    out_path = validated_dataset.path + ".parquet"
+    out_path = validated_dataset.path
     shutil.copy(src, out_path)
-    validated_dataset.metadata["file"] = out_path
     validated_dataset.metadata["rows"] = len(df)
