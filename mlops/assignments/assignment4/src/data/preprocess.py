@@ -55,12 +55,17 @@ def preprocess(df: pd.DataFrame, encoders: dict = None,
 
     y = df.pop(FRAUD_COL) if FRAUD_COL in df.columns else None
 
-    # Missing indicators for heavily-null numeric cols
-    missing_rates = df.isnull().mean()
-    heavy_null_cols = missing_rates[missing_rates > MISSING_IND_THRESHOLD].index.tolist()
+    # Missing indicators — determined from training split, reused in inference
+    if fit:
+        missing_rates = df.isnull().mean()
+        heavy_null_cols = [
+            col for col in missing_rates[missing_rates > MISSING_IND_THRESHOLD].index
+            if pd.api.types.is_numeric_dtype(df[col])
+        ]
+    else:
+        heavy_null_cols = (medians or {}).get("__missing_cols__", [])
     for col in heavy_null_cols:
-        if pd.api.types.is_numeric_dtype(df[col]):
-            df[f"{col}_missing"] = df[col].isnull().astype(np.int8)
+        df[f"{col}_missing"] = df[col].isnull().astype(np.int8)
 
     # M-columns: T→1, F→0, NaN→-1
     for col in M_COLS:
@@ -86,6 +91,7 @@ def preprocess(df: pd.DataFrame, encoders: dict = None,
     # Numeric median imputation
     if fit:
         medians = df.select_dtypes(include=[np.number]).median().to_dict()
+        medians["__missing_cols__"] = heavy_null_cols
     for col, val in (medians or {}).items():
         if col in df.columns:
             df[col] = df[col].fillna(val)
